@@ -201,3 +201,31 @@ fn detected_length_does_not_carry_over() {
     player.start(0, RATE);
     assert_eq!(player.length_ms(), 305_000);
 }
+
+#[test]
+fn analysis_finds_loop_and_silence() {
+    use nsfplay_core::{analysis::analyze, Detected};
+    // Track 1 repeats a short arpeggio forever. The detector checks every DETECT_INT (5 s), so
+    // loops this short are reported as a multiple of their period.
+    match analyze(ARPEGGIO, 0, 120_000).unwrap() {
+        Detected::Loop { start_ms, end_ms } => assert!(start_ms < 1000 && end_ms > start_ms, "{start_ms}..{end_ms}"),
+        other => panic!("expected a loop, got {other:?}"),
+    }
+    assert!(matches!(analyze(ARPEGGIO, 1, 120_000).unwrap(), Detected::Silence { at_ms } if at_ms < 5000));
+    assert!(analyze(b"garbage", 0, 1000).is_err());
+}
+
+#[test]
+fn length_override() {
+    use nsfplay_core::Length;
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.set_length(Some(Length { play_ms: 10_000, fade_ms: 2_000 }));
+    player.start(0, RATE);
+    assert_eq!(player.length_ms(), 12_000);
+    let secs = play_out(&mut player, RATE, 512, 60);
+    assert!((secs - 12.0).abs() < 0.05, "stopped after {secs:.2} s instead of 12 s");
+
+    player.set_length(None);
+    player.start(0, RATE);
+    assert_eq!(player.length_ms(), 305_000);
+}

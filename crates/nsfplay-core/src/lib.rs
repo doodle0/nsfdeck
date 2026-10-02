@@ -3,6 +3,7 @@
 use std::ffi::{c_char, c_int, CStr};
 use std::sync::{Mutex, MutexGuard};
 
+pub mod analysis;
 #[cfg(feature = "output")]
 pub mod output;
 
@@ -37,6 +38,7 @@ extern "C" {
     fn nsfp_config_set(p: *mut RawPlayer, name: *const c_char, value: c_int) -> c_int;
     fn nsfp_notify(p: *mut RawPlayer, device: c_int);
     fn nsfp_dump(p: *mut RawPlayer) -> *const c_char;
+    fn nsfp_detected(p: *mut RawPlayer, time: *mut c_int, looped: *mut c_int, fade: *mut c_int);
 }
 
 /// `MULT_SPEED` value for normal speed.
@@ -96,6 +98,23 @@ pub const CHANNELS: &[Channel] = &{
     ]
 };
 
+/// How long a track plays: `play_ms`, then a fade-out of `fade_ms`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Length {
+    pub play_ms: u32,
+    pub fade_ms: u32,
+}
+
+/// Result of the core's silence and loop detection for the current track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Detected {
+    Nothing,
+    /// The music between the two times repeats forever.
+    Loop { start_ms: u32, end_ms: u32 },
+    /// The track goes silent; `at_ms` includes about a second of trailing silence.
+    Silence { at_ms: u32 },
+}
+
 #[derive(Clone, Debug)]
 pub struct Track {
     /// Label from the file, or "Track N" when it has none.
@@ -125,6 +144,8 @@ pub struct Player {
     mask: u32,
     speed: u32,
     endless: bool,
+    /// Set by the caller (e.g. a playlist entry's duration); otherwise the core's length is used.
+    length: Option<Length>,
     fading: bool,
     /// Frames handed out since `start`, each weighted by the speed at the time (256 = 1×).
     song_ticks: u64,
@@ -151,6 +172,7 @@ impl Player {
             mask: 0,
             speed: SPEED_1X,
             endless: false,
+            length: None,
             fading: false,
             song_ticks: 0,
             step: 48,
@@ -293,10 +315,34 @@ impl Player {
         unsafe { nsfp_stopped(self.raw) != 0 }
     }
 
-    /// Length of the current track including fade. May shrink once silence is detected, or
-    /// change once a loop is detected.
+    /// Length of the current track including fade. Without an override from
+    /// [`Player::set_length`] it comes from the core, and may shrink once silence is detected
+    /// or change once a loop is detected.
     pub fn length_ms(&self) -> u32 {
-        unsafe { nsfp_length(self.raw) }.max(0) as u32
+        match self.length {
+            Some(l) => l.play_ms.saturating_add(l.fade_ms),
+            None => unsafe { nsfp_length(self.raw) }.max(0) as u32,
+        }
+    }
+
+    /// Overrides how long the track plays before fading out, or restores the core's length.
+    /// Kept across [`Player::start`].
+    pub fn set_length(&mut self, length: Option<Length>) {
+        self.length = length;
+        self.check_end();
+    }
+
+    /// What the core's silence or loop detection has found for the current track so far.
+    pub fn detected(&self) -> Detected {
+        let (mut time, mut looped, mut fade) = (0, 0, 0);
+        unsafe { nsfp_detected(self.raw, &mut time, &mut looped, &mut fade) };
+        if time < 0 {
+            Detected::Nothing
+        } else if looped > 0 {
+            Detected::Loop { start_ms: (time - looped).max(0) as u32, end_ms: time as u32 }
+        } else {
+            Detected::Silence { at_ms: time as u32 }
+        }
     }
 
     /// In endless mode the track never fades out. Turning it on cancels a fade in progress.
@@ -374,7 +420,10 @@ impl Player {
             return;
         }
         let length = self.length_ms() as u64;
-        let fade = unsafe { nsfp_fade_time(self.raw) }.max(0);
+        let fade = match self.length {
+            Some(l) => l.fade_ms as c_int,
+            None => unsafe { nsfp_fade_time(self.raw) }.max(0),
+        };
         if length > 0 && self.elapsed_ms() + fade as u64 >= length {
             unsafe { nsfp_fade_out(self.raw, fade) }
             self.fading = true;

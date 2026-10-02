@@ -233,6 +233,15 @@ int nsfp_length(nsfp *p)
     return p->player.GetLength();
 }
 
+// What silence or loop detection found for the current track, as NSF::time_in_ms (play time,
+// -1 = nothing yet), loop_in_ms (loop length, 0 after silence) and fade_in_ms.
+void nsfp_detected(nsfp *p, int *time, int *loop, int *fade)
+{
+    *time = p->nsf.time_in_ms;
+    *loop = p->nsf.loop_in_ms;
+    *fade = p->nsf.fade_in_ms;
+}
+
 // Fade length of the current track in ms (from the file, or FADE_TIME).
 int nsfp_fade_time(nsfp *p)
 {
