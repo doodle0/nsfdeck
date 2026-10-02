@@ -5,7 +5,7 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
-use crate::{Player, SPEED_1X};
+use crate::{Length, Player, SPEED_1X};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -89,12 +89,14 @@ impl Output {
         s.mask = 0;
     }
 
-    /// Starts `track` (0-based) from the beginning.
-    pub fn play(&self, track: u32) {
+    /// Starts `track` (0-based) from the beginning. `length` overrides how long it plays
+    /// (see [`Player::set_length`]).
+    pub fn play(&self, track: u32, length: Option<Length>) {
         let mut s = self.lock();
         let s = &mut *s;
         let Some(player) = s.player.as_mut() else { return };
         player.set_mute_mask(s.mask);
+        player.set_length(length);
         player.start(track, self.sample_rate);
         s.ended = false;
         s.status = Status::Playing;
@@ -122,6 +124,13 @@ impl Output {
         }
         if let Some(player) = s.player.as_mut() {
             player.seek(ms as u64);
+        }
+    }
+
+    /// Changes the current track's length while it plays, e.g. once its analysis is done.
+    pub fn set_length(&self, length: Option<Length>) {
+        if let Some(player) = self.lock().player.as_mut() {
+            player.set_length(length);
         }
     }
 

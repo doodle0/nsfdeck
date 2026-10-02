@@ -8,7 +8,9 @@ plays music through the emulation core of
 Features: open or drag in NSF/NSFe files, track list, play/pause/stop/prev/next,
 seeking, volume, file metadata, and three modes:
 
-- **Listen** plays tracks to their end, one after another.
+- **Listen** plays a playlist: add files or whole folders, reorder, shuffle and repeat, and
+  import or export NSF M3U playlists. Each track's loop is found in the background so it can
+  play a set number of loops and fade out; lengths can also be fixed per track.
 - **Studio** loops the current track endlessly, with a speed control (tempo only, not pitch)
   and per-channel mute/solo.
 - **Developer** loops the current track and shows a live text dump of the emulator state
@@ -31,7 +33,7 @@ flowchart TB
     subgraph app["Tauri app · src-tauri/"]
         direction LR
         dialog["Dialog plugin<br/>drag-and-drop"]
-        cmds["Commands<br/>open · play · seek · stop<br/>set_paused · set_volume · set_mute_mask<br/>set_endless · set_speed · dump · status"]
+        cmds["Commands<br/>open · probe · scan · analyze · play · seek · stop<br/>set_paused · set_volume · set_mute_mask · set_length<br/>set_endless · set_speed · dump · status<br/>load_state · save_state · read_text · write_text"]
     end
 
     subgraph core["nsfplay-core · crates/nsfplay-core/"]

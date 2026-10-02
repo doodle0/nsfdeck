@@ -1,5 +1,8 @@
 <script>
   import { player, formatTime } from '../player.svelte.js';
+  import { playlist } from '../playlist.svelte.js';
+
+  const REPEAT_TITLES = { off: 'Repeat: off', all: 'Repeat: whole playlist', one: 'Repeat: this track' };
 
   // Position the user is dragging the seek bar to (0-1000), or null when not dragging.
   let dragging = $state(/** @type {number | null} */ (null));
@@ -12,6 +15,9 @@
     dragging !== null ? (dragging / 1000) * range : player.active ? player.status.elapsedMs : 0,
   );
   let lastTrack = $derived((player.file?.tracks.length ?? 0) - 1);
+  // previous/next walk the playlist in Listen mode and the file's tracks otherwise
+  let canPrev = $derived(player.endless ? !!player.file && player.status.track > 0 : playlist.entries.length > 0);
+  let canNext = $derived(player.endless ? !!player.file && player.status.track < lastTrack : playlist.entries.length > 0);
 
   async function commitSeek() {
     const ms = (dragging / 1000) * range;
@@ -29,7 +35,7 @@
       class="icon"
       title="Previous track (↑)"
       aria-label="Previous track"
-      disabled={!player.file || player.status.track <= 0}
+      disabled={!canPrev}
       onclick={() => player.step(-1)}
     >
       <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z" /></svg>
@@ -53,7 +59,7 @@
       class="icon"
       title="Next track (↓)"
       aria-label="Next track"
-      disabled={!player.file || player.status.track >= lastTrack}
+      disabled={!canNext}
       onclick={() => player.step(1)}
     >
       <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z" /></svg>
@@ -81,6 +87,31 @@
 
   <!-- wraps onto its own row in narrow windows -->
   <div class="extras">
+    {#if !player.endless}
+      <button
+        class="icon toggle"
+        title={playlist.shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+        aria-label="Shuffle"
+        aria-pressed={playlist.shuffle}
+        onclick={() => playlist.toggleShuffle()}
+      >
+        <svg viewBox="0 0 24 24">
+          <path d="M4 7h3.5l9 10H20M4 17h3.5l2.4-2.7M14.1 9.7 16.5 7H20M17.5 4.5 20 7l-2.5 2.5M17.5 14.5 20 17l-2.5 2.5" />
+        </svg>
+      </button>
+      <button
+        class="icon toggle"
+        title={REPEAT_TITLES[playlist.repeat]}
+        aria-label="Repeat"
+        aria-pressed={playlist.repeat !== 'off'}
+        onclick={() => playlist.cycleRepeat()}
+      >
+        <svg viewBox="0 0 24 24">
+          <path d="M5 12V9a2 2 0 0 1 2-2h11M15.5 4.5 18 7l-2.5 2.5M19 12v3a2 2 0 0 1-2 2H6M8.5 19.5 6 17l2.5-2.5" />
+        </svg>
+        {#if playlist.repeat === 'one'}<span class="one">1</span>{/if}
+      </button>
+    {/if}
     {#if player.endless}
       <label class="speed" title="Speed: changes tempo, not pitch. Double-click to reset.">
         <span>{player.speed.toFixed(2)}×</span>
@@ -156,6 +187,31 @@
     opacity: 0.35;
     cursor: default;
     background: transparent;
+  }
+
+  .icon.toggle {
+    position: relative;
+    color: var(--dim);
+  }
+
+  .icon.toggle svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .icon.toggle[aria-pressed='true'] {
+    color: var(--accent);
+  }
+
+  .one {
+    position: absolute;
+    right: 4px;
+    bottom: 3px;
+    font-size: 9px;
+    font-weight: 700;
   }
 
   .icon.primary {

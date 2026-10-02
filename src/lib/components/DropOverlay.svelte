@@ -8,8 +8,8 @@
 <div class="overlay">
   <div class="box" class:highlight>
     <img src="/cart.png" alt="" width="64" height="64" />
-    <p class="title">Drop an NSF or NSFe file</p>
-    <p class="dim">or <button class="link" onclick={() => player.browse()}>browse for one</button></p>
+    <p class="title">Drop NSF or NSFe files or folders</p>
+    <p class="dim">or <button class="link" onclick={() => player.browse()}>browse for files</button></p>
   </div>
 </div>
 

@@ -39,7 +39,11 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 ## Status (handover, 2026-10-03)
 
 Done: open/drag-drop/CLI-arg loading, track list, play/pause/stop/prev/next, seek, volume, metadata, chip badges, per-channel mute/solo, light/dark themes, keyboard shortcuts. The app has been built and run on Linux with the test file.
-Done since (docs/ux-plan.md steps 1-2): wrapper-owned track clock, endless mode, speed (`MULT_SPEED`), generic config get/set, CI workflow (`.github/workflows/ci.yml`, not yet run on GitHub), mode switcher (Listen / Studio / Developer; mode in `localStorage`), Studio speed control, Developer state dump (`nsfp_dump`).
+Done since (docs/ux-plan.md steps 1-2): wrapper-owned track clock, endless mode, speed (`MULT_SPEED`), generic config get/set, CI workflow (`.github/workflows/ci.yml`, not yet run on GitHub), mode switcher (Listen / Studio / Developer; mode in `localStorage`), Studio speed control, Developer state dump (`nsfp_dump`). CI passes on all three platforms.
+Done (step 3): background analysis (`analysis::analyze`, loop/silence via the core's detector), per-entry lengths (`Player::set_length`), Listen playlist (`src/lib/playlist.svelte.js`: entries, durations, shuffle/repeat, analysis queue, autosave to `<app config dir>/state.json`, NSF M3U import/export in `src/lib/m3u.js`).
+- Upstream's loop detector checks every `DETECT_INT` (5 s) for the earliest match of the last `DETECT_TIME` (30 s) of register writes: loops longer than ~5 s come out right, shorter ones as a multiple of their period.
+- M3U track numbers: decimal is read as 1-based and `$hex` as 0-based (assumed to match Game_Music_Emu; unverified).
+- Headless screenshots: Chrome fires `resize` when capturing, which closes `Menu.svelte`; suppress `resize`/`blur` in the mock page to capture menus.
 
 Not done yet:
 - Repo: https://github.com/doodle0/nsfdeck (public, branch `main`). Ask before pushing.

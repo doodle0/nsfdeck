@@ -9,6 +9,8 @@
   import Channels from './lib/components/Channels.svelte';
   import DumpView from './lib/components/DumpView.svelte';
   import { MODES } from './lib/player.svelte.js';
+  import { playlist } from './lib/playlist.svelte.js';
+  import PlaylistView from './lib/components/PlaylistView.svelte';
   import DropOverlay from './lib/components/DropOverlay.svelte';
   import ErrorToast from './lib/components/ErrorToast.svelte';
 
@@ -17,15 +19,21 @@
   onMount(() => {
     player.setVolume(player.volume);
     player.applyMode();
-    invoke('initial_file').then((path) => path && player.load(path).catch(() => {}));
+    const stopSaving = playlist.autosave();
+    playlist
+      .restore()
+      .then(() => invoke('initial_file'))
+      .then((path) => path && playlist.add([path], { play: true }))
+      .catch(() => {});
 
     const timer = setInterval(() => player.poll(), 100);
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       dragging = payload.type === 'enter' || payload.type === 'over';
-      if (payload.type === 'drop' && payload.paths.length) player.load(payload.paths[0]).catch(() => {});
+      if (payload.type === 'drop' && payload.paths.length) playlist.add(payload.paths, { play: true }).catch(() => {});
     });
     return () => {
       clearInterval(timer);
+      stopSaving();
       unlisten.then((f) => f());
     };
   });
@@ -63,7 +71,7 @@
 <Transport />
 <main class={player.mode}>
   {#if player.mode === 'listen'}
-    <TrackList />
+    <PlaylistView />
   {:else if player.mode === 'studio'}
     <Channels />
     <TrackList />
@@ -73,7 +81,7 @@
   {/if}
 </main>
 
-{#if !player.file || dragging}
+{#if (!player.file && !playlist.entries.length) || dragging}
   <DropOverlay highlight={dragging} />
 {/if}
 <ErrorToast />

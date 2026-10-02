@@ -2,7 +2,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 /**
  * @typedef {{ title: string, lengthMs: number | null }} Track
@@ -43,6 +42,11 @@ class Player {
   mode = $state(savedMode());
   /** Speed multiplier used in Studio and Developer modes; Listen always plays at 1×. */
   speed = $state(1);
+  /**
+   * Listen mode's playlist (set by playlist.svelte.js, which imports this module).
+   * @type {{ ended(): void, step(delta: number): void, playCurrent(): void, browse(): void } | null}
+   */
+  listen = null;
 
   active = $derived(this.status.state !== 'stopped');
   endless = $derived(this.mode !== 'listen');
@@ -93,33 +97,36 @@ class Player {
     if (this.endless) this.call('set_speed', { speed: this.speed }).catch(() => {});
   }
 
-  async load(path) {
+  /** Loads `path` into the audio output unless it is already loaded. Playback stops. */
+  async open(path) {
+    if (this.file?.path === path) return this.file;
     /** @type {FileInfo} */
     const info = await this.call('open', { path });
     this.file = info;
     this.mask = 0;
+    this.status = { state: 'stopped', track: 0, elapsedMs: 0, lengthMs: 0 };
     const name = info.title || path.split(/[\\/]/).pop();
     getCurrentWindow().setTitle(`${name} — NSFDeck`).catch(() => {});
-    await this.play(0);
+    return info;
   }
 
-  async browse() {
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: 'NES Sound Format', extensions: ['nsf', 'nsfe'] }],
-    });
-    if (path) await this.load(path);
+  browse() {
+    this.listen?.browse();
   }
 
-  async play(track) {
+  /**
+   * Plays `track` of the loaded file. `length` ({ playMs, fadeMs }) overrides how long it
+   * plays in Listen mode; null uses the file's length or the defaults.
+   */
+  async play(track, length = null) {
     if (!this.file) return;
-    await this.call('play', { track });
+    await this.call('play', { track, length });
     this.status = { ...this.status, state: 'playing', track, elapsedMs: 0 };
   }
 
   async togglePlay() {
-    if (!this.file) return this.browse();
-    if (!this.active) return this.play(this.status.track);
+    if (!this.file) return this.endless ? this.browse() : this.listen?.playCurrent();
+    if (!this.active) return this.endless || !this.listen ? this.play(this.status.track) : this.listen.playCurrent();
     await this.call('set_paused', { paused: this.playing });
     await this.poll();
   }
@@ -129,7 +136,9 @@ class Player {
     await this.poll();
   }
 
+  /** Previous/next: through the playlist in Listen mode, through the file's tracks otherwise. */
   step(delta) {
+    if (!this.endless && this.listen) return this.listen.step(delta);
     const track = this.status.track + delta;
     if (this.file && track >= 0 && track < this.file.tracks.length) this.play(track);
   }
@@ -168,7 +177,7 @@ class Player {
       /** @type {Status} */
       const s = await invoke('status');
       this.status = s;
-      if (s.ended && !this.endless && s.track + 1 < this.file.tracks.length) await this.play(s.track + 1);
+      if (s.ended && !this.endless) this.listen?.ended();
     } catch {
       // backend errors (e.g. no audio device) were already reported by the command that hit them
     }
