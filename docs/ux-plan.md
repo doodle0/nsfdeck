@@ -99,8 +99,20 @@ playback, and media keys / OS media controls (MPRIS, SMTC, Now Playing).
     tempo metadata, so the measure/beat grid comes from a **tempo setting**: BPM or
     FamiTracker-style *frames per row × rows per beat*, plus beats per measure and an offset for the
     first downbeat.
-  - **Tap tempo**, and an *auto-detect* suggestion based on note-onset intervals from the channel
-    info (see the keyboard view). The suggestion can be wrong, so the user always confirms it.
+  - NSFPlay itself has no tempo or BPM display, so there is nothing upstream to reuse (checked
+    2026-10-03). The closest things are the play-routine rate in its info dialog
+    ("NTSC Speed: 60.098814Hz") and a ×1–×8 *slow-down* slider (`MULT_SPEED = 256 / n`) in its track
+    info window. Its track info window also lists Vol / Freq / Key / Oct / Tone / Wave per channel,
+    which is the model for our keyboard view.
+  - **Auto-detected tempo, in frames:** music engines (FamiTracker and most others) advance one row
+    every *n* play-routine calls. Note onsets (key-on edges and volume or pitch jumps in the channel
+    info) therefore fall on multiples of the row length. The background analysis finds the row
+    length as the strongest period of the onset-interval histogram, measured in frames. It then
+    suggests BPM = 60 × play rate ÷ (frames per row × rows per beat), assuming 4 rows per beat.
+    Engines with groove or fractional tempos (alternating 6/7 frames) show up as a fractional
+    average. Measuring in frames instead of seconds keeps the result exact for the common case.
+  - **Tap tempo**, and ×2 / ÷2 buttons, because the beat level is ambiguous. The suggestion can be
+    wrong, so the user always confirms it.
   - Click the ruler to seek, with snapping to beat or measure. Keys step by beat or measure.
   - The grid's downbeat offset defaults to 0, and the loop start can be snapped to it.
   - **A–B loop region**: drag on the ruler and that region repeats instead of the whole loop. This is
