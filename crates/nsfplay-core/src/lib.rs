@@ -279,16 +279,19 @@ impl Player {
         }
     }
 
-    /// Advances emulation by `frames` output frames without producing audio.
+    /// Advances emulation by `frames` output frames without producing audio. Takes the render
+    /// lock for about 20 ms of song at a time, so a long skip on another thread (e.g. preparing
+    /// a seek) never holds up the audio callback for long.
     pub fn skip(&mut self, frames: u64) {
-        let _lock = render_lock();
+        let slice = ((self.rate as u64 / 50) / self.step as u64).max(1) * self.step as u64;
         let mut left = frames;
         while left > 0 {
+            let _lock = render_lock();
             let n = if self.pending_pos < self.pending.len() {
                 self.take_pending((left * 2).min(usize::MAX as u64) as usize) as u64 / 2
             } else if left >= self.step as u64 {
-                // NSFPlayer::Skip computes `1000 * length` in UINT32, so keep calls under ~4.29M frames.
-                let n = (left.min(4_000_000) as usize / self.step * self.step) as u64;
+                // whole steps only (see `step`); NSFPlayer::Skip also overflows past ~4.29M frames
+                let n = left.min(slice) / self.step as u64 * self.step as u64;
                 unsafe { nsfp_skip(self.raw, n as u32) };
                 n
             } else {

@@ -33,6 +33,10 @@ class Player {
   file = $state(null);
   /** @type {Status} */
   status = $state({ state: 'stopped', track: 0, elapsedMs: 0, lengthMs: 0 });
+  /** `performance.now()` when `status` was last updated, for interpolating the position. */
+  statusAt = $state(0);
+  /** Counts track starts; the backend forgets per-track settings (the A–B region) on each. */
+  starts = $state(0);
   /** Bit set = channel muted. */
   mask = $state(0);
   /** 0-100 slider position. */
@@ -121,7 +125,9 @@ class Player {
   async play(track, length = null) {
     if (!this.file) return;
     await this.call('play', { track, length });
+    this.starts++;
     this.status = { ...this.status, state: 'playing', track, elapsedMs: 0 };
+    this.statusAt = performance.now();
   }
 
   async togglePlay() {
@@ -177,6 +183,7 @@ class Player {
       /** @type {Status} */
       const s = await invoke('status');
       this.status = s;
+      this.statusAt = performance.now();
       if (s.ended && !this.endless) this.listen?.ended();
     } catch {
       // backend errors (e.g. no audio device) were already reported by the command that hit them

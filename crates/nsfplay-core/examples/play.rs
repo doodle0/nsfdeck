@@ -17,7 +17,7 @@ fn main() -> Result<(), String> {
     println!("{} - {} ({} tracks)", player.title(), player.artist(), player.tracks().len());
 
     let output = Output::open()?;
-    output.load(player);
+    output.load(player, data.into());
     output.play(track.saturating_sub(1), None);
     for _ in 0..seconds * 4 {
         std::thread::sleep(Duration::from_millis(250));

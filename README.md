@@ -11,15 +11,17 @@ seeking, volume, file metadata, and three modes:
 - **Listen** plays a playlist: add files or whole folders, reorder, shuffle and repeat, and
   import or export NSF M3U playlists. Each track's loop is found in the background so it can
   play a set number of loops and fade out; lengths can also be fixed per track.
-- **Studio** loops the current track endlessly, with a speed control (tempo only, not pitch)
-  and per-channel mute/solo.
+- **Studio** loops the current track endlessly. Its timeline shows the intro and one pass of
+  the loop (found automatically, adjustable by hand), with click-to-seek and a seamless A–B
+  loop (Shift-drag to mark). Also a speed control (tempo only, not pitch) and per-channel
+  mute/solo.
 - **Developer** loops the current track and shows a live text dump of the emulator state
   (CPU, banks, RAM, sound registers).
 
 See [docs/ux-plan.md](docs/ux-plan.md) for where each mode is headed.
 
-Keyboard: Space play/pause · ↑/↓ previous/next track · ←/→ seek 5 s · Ctrl+O open ·
-Ctrl+1/2/3 Listen/Studio/Developer.
+Keyboard: Space play/pause · ↑/↓ previous/next track · ←/→ seek 5 s (Studio: 1 s, or one
+frame while paused) · Ctrl+O open · Ctrl+1/2/3 Listen/Studio/Developer.
 
 ## Architecture
 
@@ -33,7 +35,7 @@ flowchart TB
     subgraph app["Tauri app · src-tauri/"]
         direction LR
         dialog["Dialog plugin<br/>drag-and-drop"]
-        cmds["Commands<br/>open · probe · scan · analyze · play · seek · stop<br/>set_paused · set_volume · set_mute_mask · set_length<br/>set_endless · set_speed · dump · status<br/>load_state · save_state · read_text · write_text"]
+        cmds["Commands<br/>open · probe · scan · analyze · play · seek · stop<br/>set_paused · set_volume · set_mute_mask · set_length<br/>set_endless · set_speed · set_region · dump · status<br/>load_state · save_state · read_text · write_text"]
     end
 
     subgraph core["nsfplay-core · crates/nsfplay-core/"]

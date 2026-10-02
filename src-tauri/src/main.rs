@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use nsfplay_core::analysis::analyze as analyze_track;
 use nsfplay_core::output::{Output, Status as OutputStatus};
@@ -10,11 +11,16 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 /// Holds the error when no audio device could be opened; commands then report it to the UI.
-struct Audio(Result<Output, String>);
+struct Audio(Result<Arc<Output>, String>);
 
 impl Audio {
     fn get(&self) -> Result<&Output, String> {
-        self.0.as_ref().map_err(Clone::clone)
+        self.0.as_deref().map_err(Clone::clone)
+    }
+
+    /// A handle that can move to another thread.
+    fn shared(&self) -> Result<Arc<Output>, String> {
+        self.0.clone()
     }
 }
 
@@ -107,9 +113,10 @@ fn file_info(path: String, player: &Player) -> FileInfo {
 #[tauri::command]
 fn open(path: String, audio: State<Audio>) -> Result<FileInfo, String> {
     let output = audio.get()?;
-    let player = Player::load(&read_file(&path)?)?;
+    let data: Arc<[u8]> = read_file(&path)?.into();
+    let player = Player::load(&data)?;
     let info = file_info(path, &player);
-    output.load(player);
+    output.load(player, data);
     Ok(info)
 }
 
@@ -231,10 +238,18 @@ fn stop(audio: State<Audio>) -> Result<(), String> {
     Ok(())
 }
 
-// async so the potentially long emulation runs off the main thread
+// async, with the emulation on a blocking thread, so a long seek holds up neither the main
+// thread nor the async runtime; playback continues meanwhile
 #[tauri::command]
 async fn seek(ms: u32, audio: State<'_, Audio>) -> Result<(), String> {
-    audio.get()?.seek(ms);
+    let output = audio.shared()?;
+    tauri::async_runtime::spawn_blocking(move || output.seek(ms)).await.map_err(|e| e.to_string())
+}
+
+/// Sets the A–B loop region in song ms (`null` clears it). Used in endless playback.
+#[tauri::command]
+fn set_region(region: Option<(u32, u32)>, audio: State<Audio>) -> Result<(), String> {
+    audio.get()?.set_region(region);
     Ok(())
 }
 
@@ -297,7 +312,7 @@ fn initial_file() -> Option<String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(Audio(Output::open()))
+        .manage(Audio(Output::open().map(Arc::new)))
         .invoke_handler(tauri::generate_handler![
             open,
             probe,
@@ -305,6 +320,7 @@ fn main() {
             analyze,
             play,
             set_length,
+            set_region,
             load_state,
             save_state,
             read_text,

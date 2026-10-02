@@ -66,23 +66,27 @@
     </button>
   </div>
 
-  <span class="time">{formatTime(shownElapsed)}</span>
-  <input
-    class="seek"
-    type="range"
-    min="0"
-    max="1000"
-    step="1"
-    aria-label="Seek"
-    disabled={!player.active}
-    value={dragging ?? progress}
-    oninput={(e) => (dragging = Number(e.currentTarget.value))}
-    onchange={commitSeek}
-  />
-  {#if player.endless}
-    <span class="time infinite" title="Loops endlessly">∞</span>
+  {#if player.mode !== 'studio'}
+    <span class="time">{formatTime(shownElapsed)}</span>
+    <input
+      class="seek"
+      type="range"
+      min="0"
+      max="1000"
+      step="1"
+      aria-label="Seek"
+      disabled={!player.active}
+      value={dragging ?? progress}
+      oninput={(e) => (dragging = Number(e.currentTarget.value))}
+      onchange={commitSeek}
+    />
+    {#if player.endless}
+      <span class="time infinite" title="Loops endlessly">∞</span>
+    {:else}
+      <span class="time">{formatTime(player.lengthMs)}</span>
+    {/if}
   {:else}
-    <span class="time">{formatTime(player.lengthMs)}</span>
+    <span class="studio-note dim">Loops endlessly · use the timeline to seek</span>
   {/if}
 
   <!-- wraps onto its own row in narrow windows -->
@@ -230,6 +234,15 @@
     color: var(--dim);
     min-width: 3.2em;
     text-align: center;
+  }
+
+  .studio-note {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .infinite {

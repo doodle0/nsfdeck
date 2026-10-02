@@ -13,6 +13,8 @@ import { parseM3u, formatM3u } from './m3u.js';
  * @typedef {{ kind: 'loop', startMs: number, endMs: number } | { kind: 'silence', atMs: number } |
  *           { kind: 'none' } | { kind: 'error' }} Analysis
  * @typedef {'file' | 'auto' | 'custom' | 'default' | 'pending'} Source
+ * @typedef {{ startMs: number, endMs: number, manual: boolean }} Loop
+ * @typedef {{ a: number, b: number, on: boolean }} Region
  * @typedef {{ length: { playMs: number, fadeMs: number } | null, source: Source,
  *             totalMs: number | null }} Resolved
  */
@@ -24,6 +26,7 @@ const STATE_VERSION = 1;
 const ANALYSIS_VERSION = 3;
 
 const key = (/** @type {{ path: string, track: number }} */ e) => `${e.track}:${e.path}`;
+export const trackKey = (path, track) => `${track}:${path}`;
 
 function shuffled(items) {
   const a = [...items];
@@ -48,6 +51,12 @@ class Playlist {
   /** Analysis results by `key(entry)`. Shared by entries of the same file and track. */
   /** @type {Record<string, Analysis>} */
   analyses = $state({});
+  /** Loop points set by hand in Studio, by `key(entry)`; they win over the analysis. */
+  /** @type {Record<string, { startMs: number, endMs: number }>} */
+  loopOverrides = $state({});
+  /** Studio's A–B regions, by `key(entry)`. */
+  /** @type {Record<string, Region>} */
+  regions = $state({});
   /** True while files are being scanned and probed. */
   adding = $state(false);
 
@@ -59,6 +68,8 @@ class Playlist {
   #nextId = 1;
   /** Analysis queue (entry keys); the front is analyzed next. */
   #queue = /** @type {string[]} */ ([]);
+  /** Keys requested for tracks outside the playlist (e.g. played in Studio). */
+  #wanted = new Set();
   #analyzing = false;
   #loaded = false;
 
@@ -83,9 +94,10 @@ class Playlist {
     if (entry.fileLengthMs != null) return { length: null, source: 'file', totalMs: entry.fileLengthMs };
 
     const a = this.analyses[key(entry)];
+    const loop = this.loopFor(entry.path, entry.track);
     const loops = d.mode === 'loops' ? d.loops : s.loops;
-    if (a?.kind === 'loop' && (s.detectLoops || d.mode === 'loops')) {
-      const playMs = a.startMs + loops * (a.endMs - a.startMs);
+    if (loop && (s.detectLoops || d.mode === 'loops' || loop.manual)) {
+      const playMs = loop.startMs + loops * (loop.endMs - loop.startMs);
       return {
         length: { playMs, fadeMs: s.fadeMs },
         source: d.mode === 'loops' ? 'custom' : 'auto',
@@ -101,6 +113,39 @@ class Playlist {
       source: needsAnalysis ? 'pending' : 'default',
       totalMs: s.playMs + s.fadeMs,
     };
+  }
+
+  /** The loop of a track: set by hand, or found by analysis. @returns {Loop | null} */
+  loopFor(path, track) {
+    const k = trackKey(path, track);
+    const o = this.loopOverrides[k];
+    if (o) return { ...o, manual: true };
+    const a = this.analyses[k];
+    return a?.kind === 'loop' ? { startMs: a.startMs, endMs: a.endMs, manual: false } : null;
+  }
+
+  /** Sets a track's loop by hand, or (null) goes back to the analysis. */
+  setLoop(path, track, loop) {
+    const k = trackKey(path, track);
+    if (loop) this.loopOverrides[k] = { startMs: Math.round(loop.startMs), endMs: Math.round(loop.endMs) };
+    else delete this.loopOverrides[k];
+    this.#applyLength();
+  }
+
+  /** @param {Region | null} region */
+  setRegion(path, track, region) {
+    const k = trackKey(path, track);
+    if (region) this.regions[k] = { a: Math.round(region.a), b: Math.round(region.b), on: region.on };
+    else delete this.regions[k];
+  }
+
+  /** Analyzes a track soon even if it is not in the playlist (e.g. for Studio's timeline). */
+  requestAnalysis(path, track) {
+    const k = trackKey(path, track);
+    if (this.analyses[k]) return;
+    this.#wanted.add(k);
+    this.#queue = [k, ...this.#queue.filter((q) => q !== k)];
+    this.#pump();
   }
 
   // ---- adding and removing ----
@@ -304,7 +349,8 @@ class Playlist {
         const sep = k.indexOf(':');
         const track = Number(k.slice(0, sep));
         const path = k.slice(sep + 1);
-        if (this.analyses[k] || !this.entries.some((e) => e.path === path && e.track === track)) continue;
+        const needed = this.#wanted.has(k) || this.entries.some((e) => e.path === path && e.track === track);
+        if (this.analyses[k] || !needed) continue;
         try {
           this.analyses[k] = await invoke('analyze', { path, track });
         } catch {
@@ -375,6 +421,8 @@ class Playlist {
         this.#order = s.order ?? [];
         this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
         this.analyses = s.analysisVersion === ANALYSIS_VERSION ? (s.analyses ?? {}) : {};
+        this.loopOverrides = s.loopOverrides ?? {};
+        this.regions = s.regions ?? {};
         for (const e of this.entries) this.#enqueue(e);
       }
     } catch (e) {
@@ -397,6 +445,8 @@ class Playlist {
       settings: this.settings,
       analysisVersion: ANALYSIS_VERSION,
       analyses: this.analyses,
+      loopOverrides: this.loopOverrides,
+      regions: this.regions,
     };
   }
 

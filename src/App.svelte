@@ -11,6 +11,8 @@
   import { MODES } from './lib/player.svelte.js';
   import { playlist } from './lib/playlist.svelte.js';
   import PlaylistView from './lib/components/PlaylistView.svelte';
+  import Timeline from './lib/components/Timeline.svelte';
+  import { studio, FRAME_MS } from './lib/studio.svelte.js';
   import DropOverlay from './lib/components/DropOverlay.svelte';
   import ErrorToast from './lib/components/ErrorToast.svelte';
 
@@ -20,6 +22,7 @@
     player.setVolume(player.volume);
     player.applyMode();
     const stopSaving = playlist.autosave();
+    const stopStudio = studio.connect();
     playlist
       .restore()
       .then(() => invoke('initial_file'))
@@ -34,6 +37,7 @@
     return () => {
       clearInterval(timer);
       stopSaving();
+      stopStudio();
       unlisten.then((f) => f());
     };
   });
@@ -51,12 +55,15 @@
       return;
     }
     if (e.target instanceof HTMLInputElement && e.key !== ' ') return;
+    // Studio steps through its timeline: 1 s, or one frame while paused
+    const nudge = player.status.state === 'paused' ? FRAME_MS : 1000;
+    const studioMode = player.mode === 'studio';
     const actions = {
       ' ': () => player.togglePlay(),
       ArrowUp: () => player.step(-1),
       ArrowDown: () => player.step(1),
-      ArrowLeft: () => player.seek(player.status.elapsedMs - 5000),
-      ArrowRight: () => player.seek(player.status.elapsedMs + 5000),
+      ArrowLeft: () => (studioMode ? studio.step(-nudge) : player.seek(player.status.elapsedMs - 5000)),
+      ArrowRight: () => (studioMode ? studio.step(nudge) : player.seek(player.status.elapsedMs + 5000)),
     };
     if (actions[e.key]) {
       e.preventDefault();
@@ -73,6 +80,7 @@
   {#if player.mode === 'listen'}
     <PlaylistView />
   {:else if player.mode === 'studio'}
+    <div class="wide"><Timeline /></div>
     <Channels />
     <TrackList />
   {:else}
@@ -96,6 +104,14 @@
 
   main.listen {
     grid-template-columns: 1fr;
+  }
+
+  main.studio {
+    grid-template-rows: auto 1fr;
+  }
+
+  .wide {
+    grid-column: 1 / -1;
   }
 
   @media (max-width: 640px) {
