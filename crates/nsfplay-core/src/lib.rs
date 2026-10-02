@@ -36,6 +36,7 @@ extern "C" {
     fn nsfp_config_get(p: *mut RawPlayer, name: *const c_char, value: *mut c_int) -> c_int;
     fn nsfp_config_set(p: *mut RawPlayer, name: *const c_char, value: c_int) -> c_int;
     fn nsfp_notify(p: *mut RawPlayer, device: c_int);
+    fn nsfp_dump(p: *mut RawPlayer) -> *const c_char;
 }
 
 /// `MULT_SPEED` value for normal speed.
@@ -345,6 +346,21 @@ impl Player {
     /// Applies changed settings of one device (see `NSFPlayerConfig::dname`), or all if `None`.
     pub fn notify(&mut self, device: Option<u32>) {
         unsafe { nsfp_notify(self.raw, device.map_or(-1, |d| d as c_int)) }
+    }
+
+    /// Plain-text dump of the emulator state (file header, CPU, banks, memory, sound
+    /// registers) for Developer mode.
+    pub fn dump(&mut self) -> String {
+        let core = unsafe { CStr::from_ptr(nsfp_dump(self.raw)) }.to_string_lossy();
+        let ms = self.elapsed_ms();
+        format!(
+            "TIME\n  {}:{:02}.{:03}   speed {:.2}x{}\n\n{core}",
+            ms / 60_000,
+            ms / 1000 % 60,
+            ms % 1000,
+            self.speed as f64 / SPEED_1X as f64,
+            if self.endless { "   endless" } else { "" },
+        )
     }
 
     /// Counts `frames` handed out and starts the fade-out when the track's time is up.

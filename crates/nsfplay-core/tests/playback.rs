@@ -178,3 +178,16 @@ fn config_access() {
     peak(&mut player, RATE as usize / 10);
     assert!(peak(&mut player, RATE as usize / 10) < 200, "APU1 at volume 0 is still audible");
 }
+
+#[test]
+fn dumps_state() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    peak(&mut player, RATE as usize);
+    let dump = player.dump();
+    for section in ["TIME", "FILE", "CPU", "BANKS", "RAM", "WRAM", "2A03"] {
+        assert!(dump.lines().any(|l| l.split(" (").next() == Some(section)), "missing {section} in:\n{dump}");
+    }
+    assert!(dump.contains("PC="));
+    assert!(dump.contains("  $4000:"));
+}
