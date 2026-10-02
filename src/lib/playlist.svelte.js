@@ -20,6 +20,8 @@ import { parseM3u, formatM3u } from './m3u.js';
 export const DEFAULT_SETTINGS = { playMs: 5 * 60_000, fadeMs: 5000, loops: 2, detectLoops: true, autoStop: true };
 const ENDLESS_MS = 2 ** 31; // far beyond any listening session
 const STATE_VERSION = 1;
+/** Bump when analysis results change meaning, to re-analyze tracks saved by older versions. */
+const ANALYSIS_VERSION = 2;
 
 const key = (/** @type {{ path: string, track: number }} */ e) => `${e.track}:${e.path}`;
 
@@ -372,7 +374,7 @@ class Playlist {
         this.shuffle = !!s.shuffle;
         this.#order = s.order ?? [];
         this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
-        this.analyses = s.analyses ?? {};
+        this.analyses = s.analysisVersion === ANALYSIS_VERSION ? (s.analyses ?? {}) : {};
         for (const e of this.entries) this.#enqueue(e);
       }
     } catch (e) {
@@ -393,6 +395,7 @@ class Playlist {
       shuffle: this.shuffle,
       order: this.shuffle ? this.#order : [],
       settings: this.settings,
+      analysisVersion: ANALYSIS_VERSION,
       analyses: this.analyses,
     };
   }

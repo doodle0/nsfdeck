@@ -51,7 +51,12 @@ static const char *text_or_raw(const char *s, const char *raw)
 // class ([class.protected]). They are functions because MSVC rejects the pointer in a static
 // data member initializer, where the class is still incomplete. The classes are never
 // instantiated.
-struct CpuPeek : xgm::NES_CPU { static constexpr auto p_context() { return &CpuPeek::context; } };
+struct CpuPeek : xgm::NES_CPU
+{
+    static constexpr auto p_context() { return &CpuPeek::context; }
+    static constexpr auto p_breaked() { return &CpuPeek::breaked; }
+};
+struct MemPeek : xgm::NES_MEM { static constexpr auto p_image() { return &MemPeek::image; } };
 struct BankPeek : xgm::NES_BANK { static constexpr auto p_bankswitch() { return &BankPeek::bankswitch; } };
 struct ApuPeek : xgm::NES_APU { static constexpr auto p_reg() { return &ApuPeek::reg; } };
 struct DmcPeek : xgm::NES_DMC { static constexpr auto p_reg() { return &DmcPeek::reg; } };
@@ -240,6 +245,27 @@ void nsfp_detected(nsfp *p, int *time, int *loop, int *fade)
     *time = p->nsf.time_in_ms;
     *loop = p->nsf.loop_in_ms;
     *fade = p->nsf.fade_in_ms;
+}
+
+// Hash of the state that decides what the music does next: RAM, WRAM ($6000-7FFF, or up to
+// $DFFF for FDS) and the bank map. Only meaningful while the CPU idles between play calls, so
+// returns 0 with *idle = 0 otherwise. Playback is deterministic, so when this hash repeats an
+// earlier one the music loops exactly from that point.
+uint64_t nsfp_state_hash(nsfp *p, int *idle)
+{
+    xgm::NSFPlayer &pl = p->player;
+    *idle = p->loaded && pl.cpu.*CpuPeek::p_breaked();
+    if (!*idle) return 0;
+    uint64_t h = 1469598103934665603ull; // FNV-1a
+    auto mix = [&h](const uint8_t *b, size_t n) {
+        for (size_t i = 0; i < n; ++i) h = (h ^ b[i]) * 1099511628211ull;
+    };
+    const xgm::UINT8 *image = pl.mem.*MemPeek::p_image();
+    mix(image, 0x800);
+    mix(image + 0x6000, p->nsf.use_fds ? 0x8000 : 0x2000);
+    const int *banks = pl.bank.*BankPeek::p_bankswitch();
+    mix(reinterpret_cast<const uint8_t *>(banks), 16 * sizeof(int));
+    return h;
 }
 
 // Fade length of the current track in ms (from the file, or FADE_TIME).

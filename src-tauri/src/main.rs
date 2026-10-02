@@ -159,7 +159,7 @@ async fn scan(paths: Vec<String>) -> Vec<String> {
 #[tauri::command]
 async fn analyze(path: String, track: u32) -> Result<Analysis, String> {
     let data = read_file(&path)?;
-    let found = tauri::async_runtime::spawn_blocking(move || analyze_track(&data, track, 15 * 60 * 1000))
+    let found = tauri::async_runtime::spawn_blocking(move || analyze_track(&data, track, 10 * 60 * 1000))
         .await
         .map_err(|e| e.to_string())??;
     Ok(match found {

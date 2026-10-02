@@ -1,6 +1,7 @@
 use nsfplay_core::{Chip, Player};
 
 const ARPEGGIO: &[u8] = include_bytes!("data/arpeggio.nsf");
+const INTRO_LOOP: &[u8] = include_bytes!("data/intro_loop.nsf");
 const RATE: u32 = 48000;
 
 fn peak(player: &mut Player, frames: usize) -> i16 {
@@ -205,14 +206,29 @@ fn detected_length_does_not_carry_over() {
 #[test]
 fn analysis_finds_loop_and_silence() {
     use nsfplay_core::{analysis::analyze, Detected};
-    // Track 1 repeats a short arpeggio forever. The detector checks every DETECT_INT (5 s), so
-    // loops this short are reported as a multiple of their period.
+    // Track 1 repeats a short arpeggio from the start.
     match analyze(ARPEGGIO, 0, 120_000).unwrap() {
-        Detected::Loop { start_ms, end_ms } => assert!(start_ms < 1000 && end_ms > start_ms, "{start_ms}..{end_ms}"),
+        Detected::Loop { start_ms, end_ms } => assert!(start_ms < 100 && end_ms - start_ms < 5000, "{start_ms}..{end_ms}"),
         other => panic!("expected a loop, got {other:?}"),
     }
     assert!(matches!(analyze(ARPEGGIO, 1, 120_000).unwrap(), Detected::Silence { at_ms } if at_ms < 5000));
     assert!(analyze(b"garbage", 0, 1000).is_err());
+}
+
+#[test]
+fn analysis_finds_long_loop_after_intro() {
+    use nsfplay_core::{analysis::analyze, Detected};
+    // 3 s intro, then a 40 s loop, with far too many register writes for the core's detector
+    // (see tests/data/make_intro_loop.py). Its first play call runs at 0 ms, so frame n plays
+    // at (n - 1) * 16.639 ms.
+    let frame = 16.639;
+    match analyze(INTRO_LOOP, 0, 300_000).unwrap() {
+        Detected::Loop { start_ms, end_ms } => {
+            assert!((start_ms as f64 - 179.0 * frame).abs() < 3.0, "loop starts at {start_ms} ms");
+            assert!((((end_ms - start_ms) as f64) - 2400.0 * frame).abs() < 3.0, "loop ends at {end_ms} ms");
+        }
+        other => panic!("expected a loop, got {other:?}"),
+    }
 }
 
 #[test]

@@ -38,6 +38,7 @@ extern "C" {
     fn nsfp_config_set(p: *mut RawPlayer, name: *const c_char, value: c_int) -> c_int;
     fn nsfp_notify(p: *mut RawPlayer, device: c_int);
     fn nsfp_dump(p: *mut RawPlayer) -> *const c_char;
+    fn nsfp_state_hash(p: *mut RawPlayer, idle: *mut c_int) -> u64;
     fn nsfp_detected(p: *mut RawPlayer, time: *mut c_int, looped: *mut c_int, fade: *mut c_int);
 }
 
@@ -124,7 +125,8 @@ pub struct Track {
 }
 
 /// NSFPlay's rate converter keeps a static scratch buffer (xgm/devices/Audio/rconv.cpp),
-/// so two players must never render at the same time.
+/// so two players must never render at the same time. Background work must render in short
+/// slices so the audio callback never waits long for this lock.
 static RENDER_LOCK: Mutex<()> = Mutex::new(());
 
 fn render_lock() -> MutexGuard<'static, ()> {
@@ -330,6 +332,15 @@ impl Player {
     pub fn set_length(&mut self, length: Option<Length>) {
         self.length = length;
         self.check_end();
+    }
+
+    /// Hash of the emulated machine state (RAM, WRAM, banks) while the CPU idles between play
+    /// calls, or `None` while it is running. When it repeats an earlier value, the music loops
+    /// exactly from that point.
+    pub fn state_hash(&self) -> Option<u64> {
+        let mut idle = 0;
+        let h = unsafe { nsfp_state_hash(self.raw, &mut idle) };
+        (idle != 0).then_some(h)
     }
 
     /// What the core's silence or loop detection has found for the current track so far.
