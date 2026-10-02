@@ -41,14 +41,16 @@
   function onRowPointerDown(e, index) {
     if (e.button !== 0) return;
     drag = { from: index, to: index, startY: e.clientY, rowH: e.currentTarget.offsetHeight, moved: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
-  /** @param {PointerEvent} e */
+  /** @param {PointerEvent & { currentTarget: HTMLElement }} e */
   function onRowPointerMove(e) {
-    if (!drag) return;
+    if (!drag || !(e.buttons & 1)) return;
     const dy = e.clientY - drag.startY;
     if (!drag.moved && Math.abs(dy) < 5) return;
+    // Capture only once dragging: capturing on pointerdown would retarget the click and
+    // dblclick events to the row, so the row's button would never see them.
+    if (!drag.moved) e.currentTarget.setPointerCapture(e.pointerId);
     drag.moved = true;
     drag.to = Math.max(0, Math.min(playlist.entries.length - 1, drag.from + Math.round(dy / drag.rowH)));
   }
@@ -193,6 +195,7 @@
           onpointerdown={(e) => onRowPointerDown(e, i)}
           onpointermove={onRowPointerMove}
           onpointerup={onRowPointerUp}
+          onpointercancel={() => (drag = null)}
           oncontextmenu={(e) => openRowMenu(e, entry)}
         >
           <button

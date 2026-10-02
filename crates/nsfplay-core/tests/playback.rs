@@ -2,6 +2,7 @@ use nsfplay_core::{Chip, Player};
 
 const ARPEGGIO: &[u8] = include_bytes!("data/arpeggio.nsf");
 const INTRO_LOOP: &[u8] = include_bytes!("data/intro_loop.nsf");
+const SONG_DATA_LOOP: &[u8] = include_bytes!("data/song_data_loop.nsf");
 const RATE: u32 = 48000;
 
 fn peak(player: &mut Player, frames: usize) -> i16 {
@@ -226,6 +227,22 @@ fn analysis_finds_long_loop_after_intro() {
         Detected::Loop { start_ms, end_ms } => {
             assert!((start_ms as f64 - 179.0 * frame).abs() < 3.0, "loop starts at {start_ms} ms");
             assert!((((end_ms - start_ms) as f64) - 2400.0 * frame).abs() < 3.0, "loop ends at {end_ms} ms");
+        }
+        other => panic!("expected a loop, got {other:?}"),
+    }
+}
+
+#[test]
+fn analysis_finds_loop_from_song_data_reads() {
+    use nsfplay_core::{analysis::analyze, Detected};
+    // Same intro and loop, but a random number generator keeps the RAM from ever repeating, as
+    // in Capcom's engine; only the order of song-data reads gives the loop away. Frame n reads
+    // song byte n, and the loop jumps back to byte 180.
+    let frame = 16.639;
+    match analyze(SONG_DATA_LOOP, 0, 300_000).unwrap() {
+        Detected::Loop { start_ms, end_ms } => {
+            assert!((start_ms as f64 - 180.0 * frame).abs() < 20.0, "loop starts at {start_ms} ms");
+            assert!((((end_ms - start_ms) as f64) - 2400.0 * frame).abs() < 20.0, "loop ends at {end_ms} ms");
         }
         other => panic!("expected a loop, got {other:?}"),
     }

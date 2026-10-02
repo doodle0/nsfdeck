@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS = { playMs: 5 * 60_000, fadeMs: 5000, loops: 2, de
 const ENDLESS_MS = 2 ** 31; // far beyond any listening session
 const STATE_VERSION = 1;
 /** Bump when analysis results change meaning, to re-analyze tracks saved by older versions. */
-const ANALYSIS_VERSION = 2;
+const ANALYSIS_VERSION = 3;
 
 const key = (/** @type {{ path: string, track: number }} */ e) => `${e.track}:${e.path}`;
 

@@ -5,10 +5,41 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "xgm/xgm.h"
+
+// Watches every CPU read (it sits first in NSFPlayer::stack and never claims a read) and
+// records the reads of bytes not read in the last `gap_ms`: song data, which is read once per
+// pass, but not code or lookup tables read every frame. Used to find loops by the order in
+// which the engine reads its song data.
+struct ReadTracer : xgm::IDevice
+{
+    static const uint32_t NEVER = 0xffffffff;
+    const int *banks = nullptr;  // NES_BANK::bankswitch, 4 KB pages
+    uint32_t banked_from = 0x8000; // first address mapped through banks ($6000 for FDS)
+    uint32_t now_ms = 0, gap_ms = 1000;
+    std::vector<uint32_t> last_read;              // by key
+    std::vector<std::pair<uint32_t, uint32_t>> events; // (key, ms), drained by nsfp_trace_take
+
+    ReadTracer() : last_read(0x110000, NEVER) {}
+
+    void Reset() override {}
+    bool Write(xgm::UINT32, xgm::UINT32, xgm::UINT32) override { return false; }
+    bool Read(xgm::UINT32 adr, xgm::UINT32 &, xgm::UINT32) override
+    {
+        if (adr >= 0x2000 && adr < 0x6000) return false; // I/O registers
+        uint32_t key = adr >= banked_from
+            ? (uint32_t(banks[adr >> 12] & 0xff) << 12) | (adr & 0xfff) // ROM offset by bank
+            : 0x100000 + adr;                                            // RAM / WRAM
+        uint32_t &last = last_read[key];
+        if (last == NEVER || now_ms - last > gap_ms) events.emplace_back(key, now_ms);
+        last = now_ms;
+        return false;
+    }
+};
 
 struct nsfp
 {
@@ -18,6 +49,7 @@ struct nsfp
     std::vector<uint8_t> image; // NSF::Load may keep pointers into the image
     char raw_text[3][33] = {};   // non-ASCII NSF header strings, hidden from NSF::Load
     std::string dump;            // last nsfp_dump result
+    std::unique_ptr<ReadTracer> tracer;
     bool loaded = false;
 };
 
@@ -57,6 +89,7 @@ struct CpuPeek : xgm::NES_CPU
     static constexpr auto p_breaked() { return &CpuPeek::breaked; }
 };
 struct MemPeek : xgm::NES_MEM { static constexpr auto p_image() { return &MemPeek::image; } };
+struct BusPeek : xgm::Bus { static constexpr auto p_vd() { return &BusPeek::vd; } };
 struct BankPeek : xgm::NES_BANK { static constexpr auto p_bankswitch() { return &BankPeek::bankswitch; } };
 struct ApuPeek : xgm::NES_APU { static constexpr auto p_reg() { return &ApuPeek::reg; } };
 struct DmcPeek : xgm::NES_DMC { static constexpr auto p_reg() { return &DmcPeek::reg; } };
@@ -120,6 +153,15 @@ static uint8_t read_mem(nsfp *p, uint32_t adr)
     if (adr >= 0x8000) p->player.bank.Read(adr, v);
     else p->player.mem.Read(adr, v);
     return (uint8_t)v;
+}
+
+// Puts the tracer first in the CPU's device chain. NSFPlayer::Reset rebuilds the chain
+// (Reload), so this runs again after every reset.
+static void attach_tracer(nsfp *p)
+{
+    if (!p->tracer) return;
+    std::vector<xgm::IDevice *> &devices = p->player.stack.*BusPeek::p_vd();
+    if (devices.empty() || devices.front() != p->tracer.get()) devices.insert(devices.begin(), p->tracer.get());
 }
 
 extern "C" {
@@ -215,6 +257,7 @@ void nsfp_start(nsfp *p, int track, double rate)
     p->nsf.loop_in_ms = -1;
     p->nsf.fade_in_ms = -1;
     p->player.Reset();
+    attach_tracer(p);
 }
 
 uint32_t nsfp_render(nsfp *p, int16_t *buf, uint32_t frames)
@@ -236,6 +279,13 @@ int nsfp_stopped(nsfp *p)
 int nsfp_length(nsfp *p)
 {
     return p->player.GetLength();
+}
+
+// Copies `len` bytes of the CPU address space from `adr` (RAM, WRAM, banked ROM), without
+// side effects on the emulated hardware.
+void nsfp_read_memory(nsfp *p, uint32_t adr, uint8_t *out, uint32_t len)
+{
+    for (uint32_t i = 0; i < len; ++i) out[i] = p->loaded ? read_mem(p, (adr + i) & 0xffff) : 0;
 }
 
 // What silence or loop detection found for the current track, as NSF::time_in_ms (play time,
@@ -266,6 +316,41 @@ uint64_t nsfp_state_hash(nsfp *p, int *idle)
     const int *banks = pl.bank.*BankPeek::p_bankswitch();
     mix(reinterpret_cast<const uint8_t *>(banks), 16 * sizeof(int));
     return h;
+}
+
+// Starts tracing song-data reads (see ReadTracer). Call after loading; lasts until destroyed.
+int nsfp_trace_start(nsfp *p)
+{
+    if (!p->loaded) return 0;
+    if (!p->tracer)
+    {
+        p->tracer.reset(new ReadTracer());
+        p->tracer->banks = p->player.bank.*BankPeek::p_bankswitch();
+        p->tracer->banked_from = p->nsf.use_fds ? 0x6000 : 0x8000;
+    }
+    attach_tracer(p);
+    return 1;
+}
+
+// Sets the song time stamped on reads from now on.
+void nsfp_trace_time(nsfp *p, uint32_t ms)
+{
+    if (p->tracer) p->tracer->now_ms = ms;
+}
+
+// Moves up to `cap` traced reads (oldest first) into keys/times; returns how many.
+uint32_t nsfp_trace_take(nsfp *p, uint32_t *keys, uint32_t *times, uint32_t cap)
+{
+    if (!p->tracer) return 0;
+    auto &ev = p->tracer->events;
+    uint32_t n = ev.size() < cap ? (uint32_t)ev.size() : cap;
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        keys[i] = ev[i].first;
+        times[i] = ev[i].second;
+    }
+    ev.erase(ev.begin(), ev.begin() + n);
+    return n;
 }
 
 // Fade length of the current track in ms (from the file, or FADE_TIME).

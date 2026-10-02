@@ -38,7 +38,11 @@ extern "C" {
     fn nsfp_config_set(p: *mut RawPlayer, name: *const c_char, value: c_int) -> c_int;
     fn nsfp_notify(p: *mut RawPlayer, device: c_int);
     fn nsfp_dump(p: *mut RawPlayer) -> *const c_char;
+    fn nsfp_read_memory(p: *mut RawPlayer, adr: u32, out: *mut u8, len: u32);
     fn nsfp_state_hash(p: *mut RawPlayer, idle: *mut c_int) -> u64;
+    fn nsfp_trace_start(p: *mut RawPlayer) -> c_int;
+    fn nsfp_trace_time(p: *mut RawPlayer, ms: u32);
+    fn nsfp_trace_take(p: *mut RawPlayer, keys: *mut u32, times: *mut u32, cap: u32) -> u32;
     fn nsfp_detected(p: *mut RawPlayer, time: *mut c_int, looped: *mut c_int, fade: *mut c_int);
 }
 
@@ -334,6 +338,14 @@ impl Player {
         self.check_end();
     }
 
+    /// Reads `len` bytes of the emulated CPU address space starting at `adr` (RAM, WRAM or
+    /// banked ROM; addresses wrap at $FFFF). Has no side effects on the hardware.
+    pub fn read_memory(&self, adr: u16, len: usize) -> Vec<u8> {
+        let mut out = vec![0; len];
+        unsafe { nsfp_read_memory(self.raw, adr as u32, out.as_mut_ptr(), len as u32) };
+        out
+    }
+
     /// Hash of the emulated machine state (RAM, WRAM, banks) while the CPU idles between play
     /// calls, or `None` while it is running. When it repeats an earlier value, the music loops
     /// exactly from that point.
@@ -341,6 +353,27 @@ impl Player {
         let mut idle = 0;
         let h = unsafe { nsfp_state_hash(self.raw, &mut idle) };
         (idle != 0).then_some(h)
+    }
+
+    /// Starts tracing reads of song data (bytes not read in the last second), for loop
+    /// analysis. Returns false if no file is loaded.
+    pub(crate) fn trace_start(&mut self) -> bool {
+        unsafe { nsfp_trace_start(self.raw) != 0 }
+    }
+
+    /// Moves the traced reads since the last call into `out` as (key, song ms), and stamps
+    /// later reads with the current song time.
+    pub(crate) fn trace_take(&mut self, out: &mut Vec<(u32, u32)>) {
+        let mut keys = [0u32; 256];
+        let mut times = [0u32; 256];
+        loop {
+            let n = unsafe { nsfp_trace_take(self.raw, keys.as_mut_ptr(), times.as_mut_ptr(), 256) } as usize;
+            out.extend(keys[..n].iter().copied().zip(times[..n].iter().copied()));
+            if n < 256 {
+                break;
+            }
+        }
+        unsafe { nsfp_trace_time(self.raw, self.elapsed_ms() as u32) }
     }
 
     /// What the core's silence or loop detection has found for the current track so far.
