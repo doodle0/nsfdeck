@@ -40,6 +40,8 @@ extern "C" {
     fn nsfp_dump(p: *mut RawPlayer) -> *const c_char;
     fn nsfp_read_memory(p: *mut RawPlayer, adr: u32, out: *mut u8, len: u32);
     fn nsfp_state_hash(p: *mut RawPlayer, idle: *mut c_int) -> u64;
+    fn nsfp_channel_info(p: *mut RawPlayer, bit: c_int, out: *mut ChannelState) -> c_int;
+    fn nsfp_frame_period_us(p: *mut RawPlayer) -> c_int;
     fn nsfp_trace_start(p: *mut RawPlayer) -> c_int;
     fn nsfp_trace_time(p: *mut RawPlayer, ms: u32);
     fn nsfp_trace_take(p: *mut RawPlayer, keys: *mut u32, times: *mut u32, cap: u32) -> u32;
@@ -102,6 +104,29 @@ pub const CHANNELS: &[Channel] = &{
         c(25, N163, "Wave 5"), c(26, N163, "Wave 6"), c(27, N163, "Wave 7"), c(28, N163, "Wave 8"),
     ]
 };
+
+/// What a channel is playing right now, as the core records it for its keyboard display.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ChannelState {
+    /// Pitch in Hz (meaningless for noise and DPCM).
+    pub freq_hz: f64,
+    pub volume: i32,
+    pub max_volume: i32,
+    /// Non-zero while a note is keyed on.
+    pub key: i32,
+    /// Chip-specific timbre: duty cycle, noise mode, ...
+    pub tone: i32,
+}
+
+/// The core's device index of each channel bit (NSFPlayerConfig::channel_device), for
+/// [`Player::notify`]: APU1 APU2 5B MMC5 N163 VRC6 VRC7 FDS.
+pub const CHANNEL_DEVICE: [u32; 32] = [
+    0, 0, 1, 1, 1, 7, 3, 3, 3, 2, 2, 2, 5, 5, 5, 6, 6, 6, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6,
+];
+
+/// Config names of the devices, by device index (NSFPlayerConfig::dname).
+pub const DEVICE_NAMES: [&str; 8] = ["APU1", "APU2", "5B", "MMC5", "N163", "VRC6", "VRC7", "FDS"];
 
 /// How long a track plays: `play_ms`, then a fade-out of `fade_ms`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -416,6 +441,12 @@ impl Player {
         self.speed
     }
 
+    /// The current state of channel `bit` (see [`CHANNELS`]), if the core has recorded any.
+    pub fn channel(&self, bit: u32) -> Option<ChannelState> {
+        let mut out = ChannelState::default();
+        (unsafe { nsfp_channel_info(self.raw, bit as c_int, &mut out) } != 0).then_some(out)
+    }
+
     /// Mutes every channel whose bit is set (see [`CHANNELS`]).
     pub fn set_mute_mask(&mut self, mask: u32) {
         self.mask = mask;
@@ -446,11 +477,13 @@ impl Player {
     pub fn dump(&mut self) -> String {
         let core = unsafe { CStr::from_ptr(nsfp_dump(self.raw)) }.to_string_lossy();
         let ms = self.elapsed_ms();
+        let period_us = unsafe { nsfp_frame_period_us(self.raw) }.max(1) as u64;
         format!(
-            "TIME\n  {}:{:02}.{:03}   speed {:.2}x{}\n\n{core}",
+            "TIME\n  {}:{:02}.{:03}   frame {}   speed {:.2}x{}\n\n{core}",
             ms / 60_000,
             ms / 1000 % 60,
             ms % 1000,
+            ms * 1000 / period_us,
             self.speed as f64 / SPEED_1X as f64,
             if self.endless { "   endless" } else { "" },
         )

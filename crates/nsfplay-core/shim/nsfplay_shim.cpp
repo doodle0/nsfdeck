@@ -87,6 +87,7 @@ struct CpuPeek : xgm::NES_CPU
 {
     static constexpr auto p_context() { return &CpuPeek::context; }
     static constexpr auto p_breaked() { return &CpuPeek::breaked; }
+    static constexpr auto p_region() { return &CpuPeek::region; }
 };
 struct MemPeek : xgm::NES_MEM { static constexpr auto p_image() { return &MemPeek::image; } };
 struct BusPeek : xgm::Bus { static constexpr auto p_vd() { return &BusPeek::vd; } };
@@ -316,6 +317,45 @@ uint64_t nsfp_state_hash(nsfp *p, int *idle)
     const int *banks = pl.bank.*BankPeek::p_bankswitch();
     mix(reinterpret_cast<const uint8_t *>(banks), 16 * sizeof(int));
     return h;
+}
+
+// Latest state of channel `bit` (NSFPlayerConfig::channel_name order) as recorded by the
+// core for its keyboard display: frequency in Hz, volume and its maximum, key on, and a
+// chip-specific tone (duty, noise mode, ...). Returns 0 if nothing has been recorded yet.
+// The audio thread rewrites this history while rendering, so callers must hold the same lock.
+struct nsfp_channel
+{
+    double freq_hz;
+    int32_t volume;
+    int32_t max_volume;
+    int32_t key;
+    int32_t tone;
+};
+
+int nsfp_channel_info(nsfp *p, int bit, nsfp_channel *out)
+{
+    if (!p->loaded || bit < 0 || bit >= xgm::NES_CHANNEL_MAX) return 0;
+    xgm::IDeviceInfo *info = p->player.GetInfo(-1, xgm::NSFPlayerConfig::channel_track[bit]);
+    xgm::ITrackInfo *t = dynamic_cast<xgm::ITrackInfo *>(info);
+    if (!t) return 0;
+    out->freq_hz = t->GetFreqHz();
+    out->volume = t->GetVolume();
+    out->max_volume = t->GetMaxVolume();
+    out->key = t->GetKeyStatus();
+    out->tone = t->GetTone();
+    return 1;
+}
+
+// Time between play calls in microseconds, for the region the track runs in.
+int nsfp_frame_period_us(nsfp *p)
+{
+    if (!p->loaded) return 0;
+    switch (p->player.cpu.*CpuPeek::p_region())
+    {
+        case xgm::NSFPlayer::REGION_PAL: return p->nsf.speed_pal;
+        case xgm::NSFPlayer::REGION_DENDY: return p->nsf.speed_dendy;
+        default: return p->nsf.speed_ntsc;
+    }
 }
 
 // Starts tracing song-data reads (see ReadTracer). Call after loading; lasts until destroyed.

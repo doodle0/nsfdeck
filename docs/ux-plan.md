@@ -1,5 +1,8 @@
 # UX plan: modes
 
+**Status (2026-10-03): P1 is done** for all three modes, including every foundation below.
+P2 items and the full Developer mode are next.
+
 NSFDeck has three modes for three kinds of users. They are views of one player in one window, not
 separate apps: switching modes changes which panels are shown, and playback continues uninterrupted.
 The app remembers the last mode used.

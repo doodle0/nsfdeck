@@ -1,12 +1,13 @@
 //! Realtime playback of a [`Player`] on the default audio device.
 
+use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
-use crate::{Length, Player, SPEED_1X};
+use crate::{ChannelState, Length, Player, SPEED_1X};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -34,6 +35,8 @@ struct State {
     endless: bool,
     speed: u32,
     length: Option<Length>,
+    /// Config values set by the app (the mixer), applied to every player built here.
+    config: BTreeMap<String, i32>,
     rate: u32,
     /// A–B loop region in song ms, used in endless playback: on reaching `.1`, playback
     /// continues from `.0`.
@@ -58,7 +61,16 @@ struct Recipe {
     endless: bool,
     speed: u32,
     length: Option<Length>,
+    config: BTreeMap<String, i32>,
     generation: u64,
+}
+
+/// Applies config overrides to a player, then has the core pick them up.
+fn apply_config(p: &mut Player, config: &BTreeMap<String, i32>) {
+    for (name, &value) in config {
+        p.config_set(name, value);
+    }
+    p.notify(None);
 }
 
 impl Recipe {
@@ -71,6 +83,7 @@ impl Recipe {
             endless: s.endless,
             speed: s.speed,
             length: s.length,
+            config: s.config.clone(),
             generation: s.generation,
         })
     }
@@ -83,6 +96,7 @@ impl Recipe {
         p.set_speed(self.speed);
         p.set_mute_mask(self.mask);
         p.set_length(self.length);
+        apply_config(&mut p, &self.config);
         p.start(self.track, self.rate);
         p.seek(ms as u64);
         Some(p)
@@ -112,6 +126,7 @@ impl Output {
             endless: false,
             speed: SPEED_1X,
             length: None,
+            config: BTreeMap::new(),
             rate: 48000,
             region: None,
             cue: None,
@@ -157,6 +172,7 @@ impl Output {
         let mut s = self.lock();
         player.set_endless(s.endless);
         player.set_speed(s.speed);
+        apply_config(&mut player, &s.config);
         s.player = Some(player);
         s.data = Some(data);
         s.status = Status::Stopped;
@@ -279,6 +295,32 @@ impl Output {
         if let Some(cue) = s.cue.as_mut() {
             cue.set_speed(speed);
         }
+    }
+
+    /// Sets `NSFPlayerConfig` values (e.g. `CHANNEL_00_VOL`) on the current player and every
+    /// player built later (seeks, the A–B cue, new files). Unknown names are ignored.
+    pub fn set_config(&self, values: &[(String, i32)]) {
+        let mut s = self.lock();
+        let s = &mut *s;
+        for (name, value) in values {
+            s.config.insert(name.clone(), *value);
+        }
+        for p in [s.player.as_mut(), s.cue.as_mut()].into_iter().flatten() {
+            for (name, value) in values {
+                p.config_set(name, *value);
+            }
+            p.notify(None);
+        }
+    }
+
+    /// What each channel of the loaded file is playing now, by channel bit (see
+    /// [`crate::CHANNELS`]); empty while stopped. Read under the state lock, which the audio
+    /// thread holds while it renders (and updates this history).
+    pub fn channels(&self) -> Vec<(u32, ChannelState)> {
+        let s = self.lock();
+        let active = matches!(s.status, Status::Playing | Status::Paused);
+        let Some(p) = s.player.as_ref().filter(|_| active) else { return Vec::new() };
+        p.channels().iter().filter_map(|c| Some((c.bit, p.channel(c.bit)?))).collect()
     }
 
     /// Runs `f` on the loaded player, e.g. to change its config or read its state.
@@ -462,6 +504,7 @@ mod tests {
             rate: RATE,
             region,
             cue: None,
+            config: BTreeMap::new(),
             generation: 0,
             cue_wanted: tx,
             seek_seq: 0,

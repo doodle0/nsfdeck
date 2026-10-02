@@ -8,7 +8,7 @@ use nsfplay_core::analysis::analyze as analyze_track;
 use nsfplay_core::output::{Output, Status as OutputStatus};
 use nsfplay_core::{Detected, Length, Player};
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 /// Holds the error when no audio device could be opened; commands then report it to the UI.
 struct Audio(Result<Arc<Output>, String>);
@@ -52,7 +52,7 @@ struct FileInfo {
     channels: Vec<ChannelInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Status {
     state: &'static str,
@@ -286,11 +286,64 @@ fn dump(audio: State<Audio>) -> Result<String, String> {
     Ok(audio.get()?.with_player(|p| p.dump()).unwrap_or_default())
 }
 
+/// Sets core config values for the mixer, e.g. `[["CHANNEL_00_VOL", 64]]`.
 #[tauri::command]
-fn status(audio: State<Audio>) -> Result<Status, String> {
-    let output = audio.get()?;
+fn set_config(values: Vec<(String, i32)>, audio: State<Audio>) -> Result<(), String> {
+    audio.get()?.set_config(&values);
+    Ok(())
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ChannelNow {
+    bit: u32,
+    freq_hz: f64,
+    volume: i32,
+    max_volume: i32,
+    key: bool,
+    tone: i32,
+}
+
+/// Sent as the `playback` event: 30 times a second while playing, a few times otherwise.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Playback {
+    status: Status,
+    channels: Vec<ChannelNow>,
+}
+
+/// Pushes playback state and what each channel is playing to the UI.
+fn emit_playback(app: tauri::AppHandle) {
+    let mut quiet_ticks = 0;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(33));
+        let Ok(output) = app.state::<Audio>().shared() else { return };
+        let status = status_of(&output);
+        let active = status.state != "stopped";
+        // while stopped, a few updates a second are plenty (and pick up `ended`)
+        quiet_ticks = if active || status.ended { 0 } else { quiet_ticks + 1 };
+        if quiet_ticks % 8 != 0 {
+            continue;
+        }
+        let channels = output
+            .channels()
+            .into_iter()
+            .map(|(bit, c)| ChannelNow {
+                bit,
+                freq_hz: c.freq_hz,
+                volume: c.volume,
+                max_volume: c.max_volume,
+                key: c.key != 0,
+                tone: c.tone,
+            })
+            .collect();
+        let _ = app.emit("playback", Playback { status, channels });
+    }
+}
+
+fn status_of(output: &Output) -> Status {
     let pos = output.position();
-    Ok(Status {
+    Status {
         state: match pos.status {
             OutputStatus::Stopped => "stopped",
             OutputStatus::Playing => "playing",
@@ -300,7 +353,12 @@ fn status(audio: State<Audio>) -> Result<Status, String> {
         elapsed_ms: pos.elapsed_ms,
         length_ms: pos.length_ms,
         ended: output.take_ended(),
-    })
+    }
+}
+
+#[tauri::command]
+fn status(audio: State<Audio>) -> Result<Status, String> {
+    Ok(status_of(audio.get()?))
 }
 
 /// File passed on the command line, e.g. from a file manager's "Open with".
@@ -313,6 +371,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Audio(Output::open().map(Arc::new)))
+        .setup(|app| {
+            let handle = app.handle().clone();
+            std::thread::Builder::new().name("playback-events".into()).spawn(move || emit_playback(handle))?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             open,
             probe,
@@ -321,6 +384,7 @@ fn main() {
             play,
             set_length,
             set_region,
+            set_config,
             load_state,
             save_state,
             read_text,

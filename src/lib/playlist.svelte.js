@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { player } from './player.svelte.js';
 import { parseM3u, formatM3u } from './m3u.js';
+import { mixer } from './mixer.svelte.js';
 
 /**
  * @typedef {{ mode: 'auto' } | { mode: 'loops', loops: number } |
@@ -423,6 +424,7 @@ class Playlist {
         this.analyses = s.analysisVersion === ANALYSIS_VERSION ? (s.analyses ?? {}) : {};
         this.loopOverrides = s.loopOverrides ?? {};
         this.regions = s.regions ?? {};
+        mixer.restore(s.mixer);
         for (const e of this.entries) this.#enqueue(e);
       }
     } catch (e) {
@@ -447,6 +449,7 @@ class Playlist {
       analyses: this.analyses,
       loopOverrides: this.loopOverrides,
       regions: this.regions,
+      mixer: mixer.snapshot(),
     };
   }
 

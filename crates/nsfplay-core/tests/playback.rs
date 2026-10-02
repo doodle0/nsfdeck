@@ -262,3 +262,52 @@ fn length_override() {
     player.start(0, RATE);
     assert_eq!(player.length_ms(), 305_000);
 }
+
+#[test]
+fn channel_state_follows_the_music() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    peak(&mut player, RATE as usize / 2);
+    let sq1 = player.channel(0).expect("square 1 info");
+    assert!(sq1.key != 0 && sq1.volume > 0, "{sq1:?}");
+    assert!(sq1.freq_hz > 50.0 && sq1.freq_hz < 5000.0, "{sq1:?}");
+    let tri = player.channel(2).expect("triangle info");
+    assert_eq!(tri.volume, 0, "the tune only uses square 1: {tri:?}");
+}
+
+/// Peak of the left and right channels separately.
+fn peaks(player: &mut Player, frames: usize) -> (i16, i16) {
+    let mut buf = vec![0i16; frames * 2];
+    player.render(&mut buf);
+    let side = |o: usize| buf.iter().skip(o).step_by(2).map(|s| s.saturating_abs()).max().unwrap();
+    (side(0), side(1))
+}
+
+#[test]
+fn mixer_volume_and_pan() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    peaks(&mut player, RATE as usize / 4);
+    let (l, r) = peaks(&mut player, RATE as usize / 4);
+    assert!(l > 1000 && (l - r).abs() < l / 10, "centred: {l} {r}");
+
+    player.config_set("CHANNEL_00_PAN", 0); // hard left
+    player.notify(Some(nsfplay_core::CHANNEL_DEVICE[0]));
+    peaks(&mut player, RATE as usize / 4); // let the DC filter settle
+    let (l, r) = peaks(&mut player, RATE as usize / 4);
+    assert!(l > 1000 && r < l / 10, "panned left: {l} {r}");
+
+    player.config_set("CHANNEL_00_PAN", 128);
+    player.config_set("CHANNEL_00_VOL", 32); // a quarter
+    player.notify(None);
+    peaks(&mut player, RATE as usize / 4);
+    let (quiet, _) = peaks(&mut player, RATE as usize / 4);
+    assert!(quiet < l / 2, "quieter: {quiet} vs {l}");
+
+    player.config_set("CHANNEL_00_VOL", 128);
+    player.config_set("APU1_VOLUME", 0); // the device holding both squares
+    player.notify(Some(0));
+    peaks(&mut player, RATE as usize / 4);
+    let (l, r) = peaks(&mut player, RATE as usize / 4);
+    assert!(l < 200 && r < 200, "device muted: {l} {r}");
+}

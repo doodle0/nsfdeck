@@ -29,13 +29,13 @@
       .then((path) => path && playlist.add([path], { play: true }))
       .catch(() => {});
 
-    const timer = setInterval(() => player.poll(), 100);
+    const unsubscribe = player.subscribe();
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       dragging = payload.type === 'enter' || payload.type === 'over';
       if (payload.type === 'drop' && payload.paths.length) playlist.add(payload.paths, { play: true }).catch(() => {});
     });
     return () => {
-      clearInterval(timer);
+      unsubscribe();
       stopSaving();
       stopStudio();
       unlisten.then((f) => f());

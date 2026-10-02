@@ -13,8 +13,9 @@ seeking, volume, file metadata, and three modes:
   play a set number of loops and fade out; lengths can also be fixed per track.
 - **Studio** loops the current track endlessly. Its timeline shows the intro and one pass of
   the loop (found automatically, adjustable by hand), with click-to-seek and a seamless A–B
-  loop (Shift-drag to mark). Also a speed control (tempo only, not pitch) and per-channel
-  mute/solo.
+  loop (Shift-drag to mark). Its mixer sets volume per chip and volume and pan per channel,
+  with mute/solo and a live keyboard showing the note each channel plays. Also a speed
+  control (tempo only, not pitch).
 - **Developer** loops the current track and shows a live text dump of the emulator state
   (CPU, banks, RAM, sound registers).
 
@@ -35,7 +36,7 @@ flowchart TB
     subgraph app["Tauri app · src-tauri/"]
         direction LR
         dialog["Dialog plugin<br/>drag-and-drop"]
-        cmds["Commands<br/>open · probe · scan · analyze · play · seek · stop<br/>set_paused · set_volume · set_mute_mask · set_length<br/>set_endless · set_speed · set_region · dump · status<br/>load_state · save_state · read_text · write_text"]
+        cmds["Commands<br/>open · probe · scan · analyze · play · seek · stop<br/>set_paused · set_volume · set_mute_mask · set_length<br/>set_endless · set_speed · set_region · set_config · dump · status<br/>playback event (30 Hz)<br/>load_state · save_state · read_text · write_text"]
     end
 
     subgraph core["nsfplay-core · crates/nsfplay-core/"]

@@ -2,6 +2,7 @@
   import { player, formatTime } from '../player.svelte.js';
   import { playlist } from '../playlist.svelte.js';
 
+  const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
   const REPEAT_TITLES = { off: 'Repeat: off', all: 'Repeat: whole playlist', one: 'Repeat: this track' };
 
   // Position the user is dragging the seek bar to (0-1000), or null when not dragging.
@@ -125,11 +126,15 @@
           max="2"
           step="0.05"
           aria-label="Speed"
+          list="speed-presets"
           value={player.speed}
           oninput={(e) => player.setSpeed(Number(e.currentTarget.value))}
           ondblclick={() => player.setSpeed(1)}
         />
       </label>
+      <datalist id="speed-presets">
+        {#each SPEED_PRESETS as p (p)}<option value={p}></option>{/each}
+      </datalist>
     {/if}
 
     <label class="volume" title="Volume">

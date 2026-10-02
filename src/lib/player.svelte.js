@@ -1,6 +1,7 @@
 // Shared player state and the commands that drive the Rust backend (src-tauri/src/main.rs).
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /**
@@ -11,6 +12,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
  * @typedef {{ state: 'stopped' | 'playing' | 'paused', track: number, elapsedMs: number,
  *             lengthMs: number, ended?: boolean }} Status
  * @typedef {'listen' | 'studio' | 'developer'} Mode
+ * @typedef {{ bit: number, freqHz: number, volume: number, maxVolume: number, key: boolean,
+ *             tone: number }} ChannelNow
  */
 
 /** @type {Mode[]} */
@@ -37,6 +40,9 @@ class Player {
   statusAt = $state(0);
   /** Counts track starts; the backend forgets per-track settings (the A–B region) on each. */
   starts = $state(0);
+  /** What each channel plays right now, by channel bit (from the `playback` event). */
+  /** @type {Record<number, ChannelNow>} */
+  channelsNow = $state({});
   /** Bit set = channel muted. */
   mask = $state(0);
   /** 0-100 slider position. */
@@ -97,7 +103,9 @@ class Player {
   }
 
   setSpeed(speed) {
-    this.speed = Math.min(2, Math.max(0.25, Math.round(speed * 100) / 100));
+    // snap to the slider's presets when close, so they are easy to hit
+    const preset = [0.5, 0.75, 1, 1.25, 1.5, 2].find((p) => Math.abs(p - speed) < 0.03);
+    this.speed = preset ?? Math.min(2, Math.max(0.25, Math.round(speed * 100) / 100));
     if (this.endless) this.call('set_speed', { speed: this.speed }).catch(() => {});
   }
 
@@ -177,14 +185,28 @@ class Player {
     this.setMask(this.mask === others ? 0 : others);
   }
 
+  /** Follows the backend's `playback` event (30 Hz while playing). Returns an unsubscribe. */
+  subscribe() {
+    const unlisten = listen('playback', ({ payload }) => {
+      /** @type {{ status: Status, channels: ChannelNow[] }} */
+      const p = /** @type {any} */ (payload);
+      this.#onStatus(p.status);
+      this.channelsNow = Object.fromEntries(p.channels.map((c) => [c.bit, c]));
+    });
+    return () => unlisten.then((f) => f());
+  }
+
+  /** @param {Status} s */
+  #onStatus(s) {
+    this.status = s;
+    this.statusAt = performance.now();
+    if (s.ended && !this.endless) this.listen?.ended();
+  }
+
   async poll() {
     if (!this.file) return;
     try {
-      /** @type {Status} */
-      const s = await invoke('status');
-      this.status = s;
-      this.statusAt = performance.now();
-      if (s.ended && !this.endless) this.listen?.ended();
+      this.#onStatus(await invoke('status'));
     } catch {
       // backend errors (e.g. no audio device) were already reported by the command that hit them
     }

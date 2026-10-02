@@ -1,6 +1,7 @@
 <script>
   import { player } from '../player.svelte.js';
   import { playlist } from '../playlist.svelte.js';
+  import { mixer } from '../mixer.svelte.js';
   import { formatTime, parseTime } from '../m3u.js';
   import Menu from './Menu.svelte';
   import DurationSettings from './DurationSettings.svelte';
@@ -165,6 +166,11 @@
       {#if player.mask}
         <button class="link" title="Channels muted in Studio mode" onclick={() => player.setMask(0)}>
           {mutedCount} muted · Unmute all
+        </button>
+      {/if}
+      {#if !mixer.isDefault}
+        <button class="link" title="Mixer levels set in Studio mode" onclick={() => mixer.reset()}>
+          Levels changed · Reset
         </button>
       {/if}
       <button class="link" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Lengths</button>
