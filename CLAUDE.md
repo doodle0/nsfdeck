@@ -39,9 +39,10 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 ## Status (handover, 2026-10-03)
 
 Done: open/drag-drop/CLI-arg loading, track list, play/pause/stop/prev/next, seek, volume, metadata, chip badges, per-channel mute/solo, light/dark themes, keyboard shortcuts. The app has been built and run on Linux with the test file.
+Done since (docs/ux-plan.md steps 1-2): wrapper-owned track clock, endless mode, speed (`MULT_SPEED`), generic config get/set, CI workflow (`.github/workflows/ci.yml`, not yet run on GitHub), mode switcher (Listen / Studio / Developer; mode in `localStorage`), Studio speed control, Developer state dump (`nsfp_dump`).
 
 Not done yet:
-- Pushed to https://github.com/doodle0/nsfdeck (private, branch `main`), initial commit 2026-10-03. Ask before committing or pushing.
+- Repo: https://github.com/doodle0/nsfdeck (public, branch `main`). Ask before pushing.
 - License is MIT (`LICENSE`, © 2026 doodle0). Git identity is set per repo: doodle0 <49020517+doodle0@users.noreply.github.com>, matching gh account `doodle0`. `identifier` in `src-tauri/tauri.conf.json` is the placeholder `dev.nsfdeck.app`.
 - Not yet tested with a real game soundtrack, or on macOS/Windows. No CI.
 - Upstream fix for the rconv static buffer is not yet submitted as a PR. Its branch (`fix-rconv-static-buffer` in `~/projects/nsfplay`) is gone (as of 2026-10-03), so it must be recreated.

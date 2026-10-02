@@ -1,6 +1,10 @@
 <script>
   import { player, formatTime } from '../player.svelte.js';
 
+  let mutedCount = $derived(
+    (player.file?.channels ?? []).filter((ch) => player.mask & (1 << ch.bit)).length,
+  );
+
   /** Keeps the current track visible as playback advances. */
   function scrollWhenCurrent(node, current) {
     const update = (c) => c && node.scrollIntoView({ block: 'nearest' });
@@ -11,8 +15,15 @@
 
 <section class="panel">
   <h2>
-    Tracks
-    {#if player.file}<span class="dim">({player.file.tracks.length})</span>{/if}
+    <span>
+      Tracks
+      {#if player.file}<span class="dim">({player.file.tracks.length})</span>{/if}
+    </span>
+    {#if player.mask && !player.endless}
+      <button class="link" title="Channels are muted in Studio mode" onclick={() => player.setMask(0)}>
+        {mutedCount} muted · Unmute all
+      </button>
+    {/if}
   </h2>
   <ol>
     {#each player.file?.tracks ?? [] as track, i (i)}
@@ -37,7 +48,7 @@
     overflow-y: auto;
   }
 
-  button {
+  li button {
     display: grid;
     grid-template-columns: 2.6em 1fr auto;
     gap: 8px;
@@ -49,7 +60,7 @@
     text-align: left;
   }
 
-  button:hover {
+  li button:hover {
     background: var(--panel-2);
   }
 

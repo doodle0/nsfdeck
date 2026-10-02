@@ -5,7 +5,7 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
-use crate::Player;
+use crate::{Player, SPEED_1X};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -28,6 +28,8 @@ struct State {
     ended: bool,
     volume: f32,
     mask: u32,
+    endless: bool,
+    speed: u32,
 }
 
 /// Owns the audio stream and the player feeding it. All methods are cheap except
@@ -47,6 +49,8 @@ impl Output {
             ended: false,
             volume: 1.0,
             mask: 0,
+            endless: false,
+            speed: SPEED_1X,
         }));
         let (ready_tx, ready_rx) = mpsc::channel();
         let thread_state = state.clone();
@@ -73,9 +77,12 @@ impl Output {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Replaces the current file and clears channel mutes. Playback stops.
-    pub fn load(&self, player: Player) {
+    /// Replaces the current file and clears channel mutes. Playback stops. Endless mode and
+    /// speed carry over to the new file.
+    pub fn load(&self, mut player: Player) {
         let mut s = self.lock();
+        player.set_endless(s.endless);
+        player.set_speed(s.speed);
         s.player = Some(player);
         s.status = Status::Stopped;
         s.ended = false;
@@ -120,8 +127,19 @@ impl Output {
 
     /// Endless playback (Studio mode): the track never fades out or ends.
     pub fn set_endless(&self, endless: bool) {
-        if let Some(player) = self.lock().player.as_mut() {
+        let mut s = self.lock();
+        s.endless = endless;
+        if let Some(player) = s.player.as_mut() {
             player.set_endless(endless);
+        }
+    }
+
+    /// Playback speed as a `MULT_SPEED` value ([`SPEED_1X`] = normal).
+    pub fn set_speed(&self, speed: u32) {
+        let mut s = self.lock();
+        s.speed = speed;
+        if let Some(player) = s.player.as_mut() {
+            player.set_speed(speed);
         }
     }
 

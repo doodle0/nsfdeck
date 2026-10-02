@@ -4,16 +4,17 @@
   // Position the user is dragging the seek bar to (0-1000), or null when not dragging.
   let dragging = $state(/** @type {number | null} */ (null));
 
+  let range = $derived(player.seekRangeMs);
   let progress = $derived(
-    player.active && player.lengthMs > 0 ? Math.min(1000, (player.status.elapsedMs / player.lengthMs) * 1000) : 0,
+    player.active && range > 0 ? Math.min(1000, (player.status.elapsedMs / range) * 1000) : 0,
   );
   let shownElapsed = $derived(
-    dragging !== null ? (dragging / 1000) * player.lengthMs : player.active ? player.status.elapsedMs : 0,
+    dragging !== null ? (dragging / 1000) * range : player.active ? player.status.elapsedMs : 0,
   );
   let lastTrack = $derived((player.file?.tracks.length ?? 0) - 1);
 
   async function commitSeek() {
-    const ms = (dragging / 1000) * player.lengthMs;
+    const ms = (dragging / 1000) * range;
     try {
       await player.seek(ms);
     } finally {
@@ -72,29 +73,53 @@
     oninput={(e) => (dragging = Number(e.currentTarget.value))}
     onchange={commitSeek}
   />
-  <span class="time">{formatTime(player.lengthMs)}</span>
+  {#if player.endless}
+    <span class="time infinite" title="Loops endlessly">∞</span>
+  {:else}
+    <span class="time">{formatTime(player.lengthMs)}</span>
+  {/if}
 
-  <label class="volume" title="Volume">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 9h4l5-4v14l-5-4H4z" />
-      <path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
-    </svg>
-    <input
-      type="range"
-      min="0"
-      max="100"
-      aria-label="Volume"
-      value={player.volume}
-      oninput={(e) => player.setVolume(Number(e.currentTarget.value))}
-    />
-  </label>
+  <!-- wraps onto its own row in narrow windows -->
+  <div class="extras">
+    {#if player.endless}
+      <label class="speed" title="Speed: changes tempo, not pitch. Double-click to reset.">
+        <span>{player.speed.toFixed(2)}×</span>
+        <input
+          type="range"
+          min="0.25"
+          max="2"
+          step="0.05"
+          aria-label="Speed"
+          value={player.speed}
+          oninput={(e) => player.setSpeed(Number(e.currentTarget.value))}
+          ondblclick={() => player.setSpeed(1)}
+        />
+      </label>
+    {/if}
+
+    <label class="volume" title="Volume">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 9h4l5-4v14l-5-4H4z" />
+        <path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
+      </svg>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        aria-label="Volume"
+        value={player.volume}
+        oninput={(e) => player.setVolume(Number(e.currentTarget.value))}
+      />
+    </label>
+  </div>
 </section>
 
 <style>
   section {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: 8px 12px;
     padding: 10px 14px;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -151,9 +176,38 @@
     text-align: center;
   }
 
+  .infinite {
+    font-size: 18px;
+    line-height: 1;
+  }
+
   .seek {
     flex: 1;
-    min-width: 80px;
+    min-width: 120px;
+  }
+
+  .extras {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+
+  .speed {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .speed span {
+    min-width: 3.2em;
+    text-align: right;
+  }
+
+  .speed input {
+    width: 90px;
   }
 
   .volume {

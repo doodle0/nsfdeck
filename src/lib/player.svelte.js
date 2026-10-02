@@ -11,7 +11,23 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
  *             chips: string[], tracks: Track[], channels: Channel[] }} FileInfo
  * @typedef {{ state: 'stopped' | 'playing' | 'paused', track: number, elapsedMs: number,
  *             lengthMs: number, ended?: boolean }} Status
+ * @typedef {'listen' | 'studio' | 'developer'} Mode
  */
+
+/** @type {Mode[]} */
+export const MODES = ['listen', 'studio', 'developer'];
+const MODE_KEY = 'nsfdeck.mode';
+
+/** @returns {Mode} */
+function savedMode() {
+  try {
+    const m = localStorage.getItem(MODE_KEY);
+    if (MODES.includes(/** @type {Mode} */ (m))) return /** @type {Mode} */ (m);
+  } catch {
+    // storage unavailable: fall back to the default
+  }
+  return 'listen';
+}
 
 class Player {
   /** @type {FileInfo | null} */
@@ -23,12 +39,26 @@ class Player {
   /** 0-100 slider position. */
   volume = $state(80);
   error = $state('');
+  /** Listen plays tracks to their end; Studio and Developer loop the current track endlessly. */
+  mode = $state(savedMode());
+  /** Speed multiplier used in Studio and Developer modes; Listen always plays at 1×. */
+  speed = $state(1);
 
   active = $derived(this.status.state !== 'stopped');
+  endless = $derived(this.mode !== 'listen');
   playing = $derived(this.status.state === 'playing');
   /** Length shown for the current track: live from the engine while playing, else from the file. */
   lengthMs = $derived(
     this.active ? this.status.lengthMs : (this.file?.tracks[this.status.track]?.lengthMs ?? 0),
+  );
+  /**
+   * Range of the seek bar. In endless modes playback runs past the track's length, so the range
+   * grows to the next whole minute after the playhead (until Studio gets its intro + loop timeline).
+   */
+  seekRangeMs = $derived(
+    this.endless
+      ? Math.max(this.lengthMs, Math.ceil((this.status.elapsedMs + 1) / 60000) * 60000)
+      : this.lengthMs,
   );
 
   /** Invokes a backend command, surfacing failures in the error toast. */
@@ -39,6 +69,28 @@ class Player {
       this.error = String(e);
       throw e;
     }
+  }
+
+  /** Sends the current mode's playback settings to the backend. */
+  applyMode() {
+    this.call('set_endless', { endless: this.endless }).catch(() => {});
+    this.call('set_speed', { speed: this.endless ? this.speed : 1 }).catch(() => {});
+  }
+
+  /** @param {Mode} mode */
+  setMode(mode) {
+    this.mode = mode;
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      // not persisted; the mode still applies for this session
+    }
+    this.applyMode();
+  }
+
+  setSpeed(speed) {
+    this.speed = Math.min(2, Math.max(0.25, Math.round(speed * 100) / 100));
+    if (this.endless) this.call('set_speed', { speed: this.speed }).catch(() => {});
   }
 
   async load(path) {
@@ -116,7 +168,7 @@ class Player {
       /** @type {Status} */
       const s = await invoke('status');
       this.status = s;
-      if (s.ended && s.track + 1 < this.file.tracks.length) await this.play(s.track + 1);
+      if (s.ended && !this.endless && s.track + 1 < this.file.tracks.length) await this.play(s.track + 1);
     } catch {
       // backend errors (e.g. no audio device) were already reported by the command that hit them
     }

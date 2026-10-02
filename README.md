@@ -6,9 +6,18 @@ plays music through the emulation core of
 [NSFPlay](https://github.com/bbbradsmith/nsfplay), which is included as a git submodule.
 
 Features: open or drag in NSF/NSFe files, track list, play/pause/stop/prev/next,
-seeking, volume, file metadata, and per-channel mute/solo.
+seeking, volume, file metadata, and three modes:
 
-Keyboard: Space play/pause · ↑/↓ previous/next track · ←/→ seek 5 s · Ctrl+O open.
+- **Listen** plays tracks to their end, one after another.
+- **Studio** loops the current track endlessly, with a speed control (tempo only, not pitch)
+  and per-channel mute/solo.
+- **Developer** loops the current track and shows a live text dump of the emulator state
+  (CPU, banks, RAM, sound registers).
+
+See [docs/ux-plan.md](docs/ux-plan.md) for where each mode is headed.
+
+Keyboard: Space play/pause · ↑/↓ previous/next track · ←/→ seek 5 s · Ctrl+O open ·
+Ctrl+1/2/3 Listen/Studio/Developer.
 
 ## Architecture
 
@@ -16,13 +25,13 @@ Keyboard: Space play/pause · ↑/↓ previous/next track · ←/→ seek 5 s ·
 flowchart TB
     subgraph webview["Webview · src/"]
         direction LR
-        ui["Svelte components<br/>NowPlaying · Transport<br/>TrackList · Channels"] <--> store["player.svelte.js<br/>shared playback state"]
+        ui["Svelte components<br/>NowPlaying · ModeSwitch · Transport<br/>TrackList · Channels · DumpView"] <--> store["player.svelte.js<br/>shared playback state"]
     end
 
     subgraph app["Tauri app · src-tauri/"]
         direction LR
         dialog["Dialog plugin<br/>drag-and-drop"]
-        cmds["Commands<br/>open · play · seek · stop<br/>set_paused · set_volume<br/>set_mute_mask · status"]
+        cmds["Commands<br/>open · play · seek · stop<br/>set_paused · set_volume · set_mute_mask<br/>set_endless · set_speed · dump · status"]
     end
 
     subgraph core["nsfplay-core · crates/nsfplay-core/"]

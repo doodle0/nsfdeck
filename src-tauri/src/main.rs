@@ -118,6 +118,27 @@ fn set_mute_mask(mask: u32, audio: State<Audio>) -> Result<(), String> {
     Ok(())
 }
 
+/// Endless playback (Studio and Developer modes): tracks never fade out or end.
+#[tauri::command]
+fn set_endless(endless: bool, audio: State<Audio>) -> Result<(), String> {
+    audio.get()?.set_endless(endless);
+    Ok(())
+}
+
+/// `speed` is a multiplier, e.g. 1.0 for normal speed.
+#[tauri::command]
+fn set_speed(speed: f64, audio: State<Audio>) -> Result<(), String> {
+    let mult = (speed * nsfplay_core::SPEED_1X as f64).round().clamp(1.0, u32::MAX as f64) as u32;
+    audio.get()?.set_speed(mult);
+    Ok(())
+}
+
+/// Plain-text emulator state for Developer mode, or an empty string with no file loaded.
+#[tauri::command]
+fn dump(audio: State<Audio>) -> Result<String, String> {
+    Ok(audio.get()?.with_player(|p| p.dump()).unwrap_or_default())
+}
+
 #[tauri::command]
 fn status(audio: State<Audio>) -> Result<Status, String> {
     let output = audio.get()?;
@@ -153,6 +174,9 @@ fn main() {
             seek,
             set_volume,
             set_mute_mask,
+            set_endless,
+            set_speed,
+            dump,
             status,
             initial_file
         ])

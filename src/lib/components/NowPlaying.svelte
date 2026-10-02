@@ -1,5 +1,6 @@
 <script>
   import { player } from '../player.svelte.js';
+  import ModeSwitch from './ModeSwitch.svelte';
 
   let file = $derived(player.file);
   let title = $derived(file ? file.title || file.path.split(/[\\/]/).pop() : 'No file loaded');
@@ -22,6 +23,7 @@
       {/each}
     </ul>
   {/if}
+  <ModeSwitch />
   <button class="open" title="Open file (Ctrl+O)" onclick={() => player.browse()}>Open…</button>
 </header>
 

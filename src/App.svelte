@@ -7,6 +7,8 @@
   import Transport from './lib/components/Transport.svelte';
   import TrackList from './lib/components/TrackList.svelte';
   import Channels from './lib/components/Channels.svelte';
+  import DumpView from './lib/components/DumpView.svelte';
+  import { MODES } from './lib/player.svelte.js';
   import DropOverlay from './lib/components/DropOverlay.svelte';
   import ErrorToast from './lib/components/ErrorToast.svelte';
 
@@ -14,6 +16,7 @@
 
   onMount(() => {
     player.setVolume(player.volume);
+    player.applyMode();
     invoke('initial_file').then((path) => path && player.load(path).catch(() => {}));
 
     const timer = setInterval(() => player.poll(), 100);
@@ -32,6 +35,11 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
       e.preventDefault();
       player.browse();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && ['1', '2', '3'].includes(e.key)) {
+      e.preventDefault();
+      player.setMode(MODES[Number(e.key) - 1]);
       return;
     }
     if (e.target instanceof HTMLInputElement && e.key !== ' ') return;
@@ -53,9 +61,16 @@
 
 <NowPlaying />
 <Transport />
-<main>
-  <TrackList />
-  <Channels />
+<main class={player.mode}>
+  {#if player.mode === 'listen'}
+    <TrackList />
+  {:else if player.mode === 'studio'}
+    <Channels />
+    <TrackList />
+  {:else}
+    <DumpView />
+    <TrackList />
+  {/if}
 </main>
 
 {#if !player.file || dragging}
@@ -66,9 +81,13 @@
 <style>
   main {
     display: grid;
-    grid-template-columns: 1fr 250px;
+    grid-template-columns: 1fr 260px;
     gap: 12px;
     min-height: 0;
+  }
+
+  main.listen {
+    grid-template-columns: 1fr;
   }
 
   @media (max-width: 640px) {
