@@ -40,14 +40,13 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 Done: open/drag-drop/CLI-arg loading, track list, play/pause/stop/prev/next, seek, volume, metadata, chip badges, per-channel mute/solo, light/dark themes, keyboard shortcuts. The app has been built and run on Linux with the test file.
 
 Not done yet:
-- **Nothing is committed** except the staged submodule. Ask before committing or pushing.
+- Pushed to https://github.com/doodle0/nsfdeck (private, branch `main`), initial commit 2026-10-03. Ask before committing or pushing.
 - License is MIT (`LICENSE`, © 2026 doodle0). Git identity is set per repo: doodle0 <49020517+doodle0@users.noreply.github.com>, matching gh account `doodle0`. `identifier` in `src-tauri/tauri.conf.json` is the placeholder `dev.nsfdeck.app`.
 - Not yet tested with a real game soundtrack, or on macOS/Windows. No CI.
 - Upstream fix for the rconv static buffer is not yet submitted as a PR. Its branch (`fix-rconv-static-buffer` in `~/projects/nsfplay`) is gone (as of 2026-10-03), so it must be recreated.
 - `~/emsdk` is left over from an abandoned WebAssembly approach; the user may want it deleted.
 
-Next planned work (features in original NSFPlay that are missing here), roughly in priority order:
-1. **Mixer.** Per-device volume uses config `<DEV>_VOLUME` (dev names: `APU1 APU2 5B MMC5 N163 VRC6 VRC7 FDS`, default 128) plus `MASTER_VOLUME`. Per-channel volume/pan uses `CHANNEL_nn_VOL` and `CHANNEL_nn_PAN` (default 128). Apply with `player.Notify(device_id)` / `NotifyPan(device_id)`. Needs a generic config setter in the shim.
-2. Settings: default play/fade time, loops, silence auto-stop, loop detection, region (NTSC/PAL/Dendy), speed, sample rate/quality, LPF/HPF, per-chip emulation options. Persist settings.
-3. Channel visualizer / keyboard view (`NSFPlayer::GetInfo`, `infobuf`).
-4. WAV export, NSFe text/info view, memory viewer, presets, M3U playlists.
+Next planned work: see **docs/ux-plan.md** (Listen / Studio / Developer modes, P1 scope, foundations, order).
+Config keys for the mixer: per-device `<DEV>_VOLUME` (`APU1 APU2 5B MMC5 N163 VRC6 VRC7 FDS`, default 128),
+`MASTER_VOLUME`, per-channel `CHANNEL_nn_VOL` / `CHANNEL_nn_PAN` (default 128); apply with
+`player.Notify(device_id)` / `NotifyPan(device_id)`. Speed is `MULT_SPEED` (256 = 1x).
