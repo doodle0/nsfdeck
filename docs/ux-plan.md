@@ -63,9 +63,9 @@ playback, and media keys / OS media controls (MPRIS, SMTC, Now Playing).
 ```
 ┌───────────────────────────────────────────────────────────┐
 │ ♪ Track title                                 [Studio ▾]  │
-│ ▶ ■  track [2 ▾]  speed [1.00×]  tempo 150 BPM 4/4  A▕━▏B │
-│ ├──── intro ────┤├────────── loop ──────────┤  ⟲ ×3       │
-│ |1 . . |2 . . . |3 . . . |4 ●. . . |5 . . . |6 . . .|     │  ← measure/beat ruler
+│ ▶ ■  track [2 ▾]  speed [1.00×]                 A▕━▏B  ⟲  │
+│ ├──── intro ────┤├────────── loop ──────────┤  pass ×3    │
+│ 0:00      0:15      0:30  ●   0:45      1:00      1:15    │  ← time ruler
 ├────────────────────────────┬──────────────────────────────┤
 │ Mixer                      │ Keyboard                     │
 │ 2A03  ━━━━●━  M S          │ Sq1 ▕▔▔█▔▔▔▔▔▔▔▔▔▔▔▔▔▕        │
@@ -94,30 +94,15 @@ playback, and media keys / OS media controls (MPRIS, SMTC, Now Playing).
   `MULT_SPEED`, which runs the play routine faster or slower while APU timing stays the same, so the
   **tempo changes but the pitch does not**. The UI should say so. The playlist duration is unaffected;
   the time display shows song time.
-- **Musical timeline:**
-  - The position is counted in NES frames (60.1 Hz NTSC, 50 Hz PAL) under the hood. NSF files have no
-    tempo metadata, so the measure/beat grid comes from a **tempo setting**: BPM or
-    FamiTracker-style *frames per row × rows per beat*, plus beats per measure and an offset for the
-    first downbeat.
-  - NSFPlay itself has no tempo or BPM display, so there is nothing upstream to reuse (checked
-    2026-10-03). The closest things are the play-routine rate in its info dialog
-    ("NTSC Speed: 60.098814Hz") and a ×1–×8 *slow-down* slider (`MULT_SPEED = 256 / n`) in its track
-    info window. Its track info window also lists Vol / Freq / Key / Oct / Tone / Wave per channel,
-    which is the model for our keyboard view.
-  - **Auto-detected tempo, in frames:** music engines (FamiTracker and most others) advance one row
-    every *n* play-routine calls. Note onsets (key-on edges and volume or pitch jumps in the channel
-    info) therefore fall on multiples of the row length. The background analysis finds the row
-    length as the strongest period of the onset-interval histogram, measured in frames. It then
-    suggests BPM = 60 × play rate ÷ (frames per row × rows per beat), assuming 4 rows per beat.
-    Engines with groove or fractional tempos (alternating 6/7 frames) show up as a fractional
-    average. Measuring in frames instead of seconds keeps the result exact for the common case.
-  - **Tap tempo**, and ×2 / ÷2 buttons, because the beat level is ambiguous. The suggestion can be
-    wrong, so the user always confirms it.
-  - Click the ruler to seek, with snapping to beat or measure. Keys step by beat or measure.
-  - The grid's downbeat offset defaults to 0, and the loop start can be snapped to it.
+- **Timeline tools** (in time, not musical units):
+  - Click or drag on the ruler to seek. Keys step by 1 s, or by one NES frame when paused.
   - **A–B loop region**: drag on the ruler and that region repeats instead of the whole loop. This is
-    the most important tool for transcribing a passage.
-  - Tempo settings are saved per *(file, track)*.
+    the most important tool for transcribing a passage. Saved per *(file, track)*.
+  - *Dropped (2026-10-03): a musical timeline with measures, beats, a tempo setting, tap tempo
+    and tempo detection. NSF files contain no tempo information, and NSFPlay has no tempo display
+    either; the closest things it has are the play-routine rate in its info dialog ("NTSC Speed:
+    60.098814Hz") and a ×1–×8 slow-down slider. Its track info window lists Vol / Freq / Key /
+    Oct / Tone / Wave per channel, which remains the model for our keyboard view.*
 - **Mixer:** volume, pan, mute and solo for each channel; volume for each chip; master volume. Reset
   buttons. Uses `<DEV>_VOLUME`, `CHANNEL_nn_VOL`/`_PAN`, and `MASTER_VOLUME`, applied with
   `Notify`/`NotifyPan`. Studio only; Listen mode keeps only master volume. Mixer settings stay
@@ -173,7 +158,7 @@ These are not visible features, but the P1 work depends on them:
    the core endless (which Studio mode needs anyway), and call `FadeOut` ourselves when a Listen
    entry's duration is reached. This also makes per-entry durations and A–B loops straightforward.
 2. **Background track analysis:** a second `Player` renders the track faster than real time with loop
-   detection on, to find the loop start and end and to collect note onsets for tempo detection.
+   detection on, to find the loop start and end.
    Upstream's detector (`NESDetector`, `xgm/devices/Misc/detect.cpp`) watches APU register writes
    and reports a loop once the last `DETECT_TIME` (30 s by default) of writes repeats, giving the loop
    start and end in ms. Analysis therefore renders about intro + loop + 30 s, which takes a few
@@ -185,7 +170,7 @@ These are not visible features, but the P1 work depends on them:
    playback. It is fast enough (the core renders faster than real time), but this is one more
    reason to get the upstream rconv fix merged.
 3. **Generic config get/set in the shim**, used by the mixer, speed, durations and settings.
-4. **Persistence:** settings, the playlist, per-track durations and tempo, stored as JSON in the OS
+4. **Persistence:** settings, the playlist, per-track durations, loop points and A–B regions, stored as JSON in the OS
    config directory.
 5. **Live channel data:** push playback state and channel info from Rust at about 30–60 Hz, using
    Tauri events or a channel instead of the current 100 ms `status` poll.
@@ -198,5 +183,5 @@ These are not visible features, but the P1 work depends on them:
    scaffold
 3. Background analysis (foundation 2), then playlist, durations, shuffle and repeat (with persistence)
 4. Studio: endless single-track playback, the intro + loop timeline, mixer, speed
-5. Keyboard view, then the beat grid, tap tempo, A–B loop, then auto-detecting tempo
+5. Keyboard view, then the A–B loop
 6. P2 items as time permits
