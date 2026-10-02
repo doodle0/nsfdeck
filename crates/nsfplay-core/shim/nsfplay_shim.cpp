@@ -48,6 +48,7 @@ nsfp *nsfp_create()
     nsfp *p = new nsfp();
     p->config["APU2_OPTION5"] = 0; // disable randomized noise phase at reset
     p->config["APU2_OPTION7"] = 0; // disable randomized tri phase at reset
+    p->config["PLAY_ADVANCE"] = 1; // never fade out on its own; Player decides when a track ends
     p->player.SetConfig(&p->config);
     return p;
 }
@@ -149,6 +150,45 @@ int nsfp_stopped(nsfp *p)
 int nsfp_length(nsfp *p)
 {
     return p->player.GetLength();
+}
+
+// Fade length of the current track in ms (from the file, or FADE_TIME).
+int nsfp_fade_time(nsfp *p)
+{
+    return p->nsf.GetFadeTime();
+}
+
+void nsfp_fade_out(nsfp *p, int ms)
+{
+    p->player.FadeOut(ms);
+}
+
+// Cancels a fade in progress, e.g. when switching to endless playback.
+void nsfp_cancel_fade(nsfp *p)
+{
+    p->player.fader.Reset();
+}
+
+// Generic access to NSFPlayerConfig values. Unknown names return 0 instead of throwing.
+int nsfp_config_get(nsfp *p, const char *name, int *value)
+{
+    if (!p->config.HasValue(name)) return 0;
+    *value = p->config[name].GetInt();
+    return 1;
+}
+
+int nsfp_config_set(nsfp *p, const char *name, int value)
+{
+    if (!p->config.HasValue(name)) return 0;
+    p->config[name] = value;
+    return 1;
+}
+
+// Applies changed device settings (volume, options, pan); -1 means all devices.
+void nsfp_notify(nsfp *p, int device)
+{
+    if (!p->loaded) return;
+    p->player.Notify(device); // also calls NotifyPan
 }
 
 // Bit set = channel muted, in NSFPlayerConfig::channel_name order.

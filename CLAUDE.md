@@ -24,10 +24,11 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 - `NSF::Load(image, size)` leaves play/fade/loop times uninitialized; only `NSF::LoadFile` sets them. The shim mirrors LoadFile (`time_in_ms = -1`, etc.). Without that, every track ends after 50 ms.
 - `RateConverter::FastRender` (upstream `xgm/devices/Audio/rconv.cpp`) uses a `static INT32 t[2]` shared by all players. `RENDER_LOCK` in `src/lib.rs` serializes `start`/`render`/`skip`, because `Reset()` also renders.
 - The core `printf`s debug output unless `NDEBUG` is defined (build.rs defines it).
+- `PlayerConfig::operator[]` throws `std::out_of_range` for unknown names; the shim checks `HasValue` first (`nsfp_config_get/set`).
 - Mute mask bits follow `NSFPlayerConfig::channel_name`. VRC7 channels 6-8 are left out of `CHANNELS` because the core shifts their bits onto N163's.
 - Text fields are UTF-8 or Shift-JIS; `decode()` falls back to Shift-JIS.
 - `sjis_legacy` (upstream `nsf.cpp`) runs iconv in place on NSF header strings and aborts under glibc. The shim blanks non-ASCII header fields before `Load` and returns the raw bytes instead. macOS needs `-liconv` (build.rs). This is a candidate upstream fix.
-- `NSFPlayer::Render`/`Skip` advance `time_in_ms` by a truncated whole number of ms per call. `Player` therefore calls the core only in whole-ms chunks (`step`, e.g. 48 frames at 48 kHz) and buffers the rest; otherwise small audio buffers make tracks overrun (64 frames: 5:05 becomes 6:45). `Skip` also computes `1000 * length` in UINT32, so `Player::skip` splits long seeks into pieces under 4M frames. This is a candidate upstream fix.
+- `NSFPlayer::Render`/`Skip` advance `time_in_ms` by a truncated whole number of ms per call, and `Skip` computes `1000 * length` in UINT32 (overflows past about 89 s at 48 kHz). So `Player` owns the track clock: the core runs with `PLAY_ADVANCE=1` (never fades out by itself), `Player` counts song time as frames × `MULT_SPEED` and calls `FadeOut` when the time is up (unless endless). It still calls the core only in whole-ms chunks (`step`) and splits long skips, so the core's loop and silence detection stays accurate. Upstream fix candidate.
 - `AUTO_STOP` ends tracks of unknown length after `STOP_SEC` (3 s) of silence. Otherwise the default length is 5:00 plus a 5 s fade.
 
 ## Testing notes

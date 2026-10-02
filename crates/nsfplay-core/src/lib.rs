@@ -30,7 +30,16 @@ extern "C" {
     fn nsfp_stopped(p: *mut RawPlayer) -> c_int;
     fn nsfp_length(p: *mut RawPlayer) -> c_int;
     fn nsfp_set_mask(p: *mut RawPlayer, mask: u32);
+    fn nsfp_fade_time(p: *mut RawPlayer) -> c_int;
+    fn nsfp_fade_out(p: *mut RawPlayer, ms: c_int);
+    fn nsfp_cancel_fade(p: *mut RawPlayer);
+    fn nsfp_config_get(p: *mut RawPlayer, name: *const c_char, value: *mut c_int) -> c_int;
+    fn nsfp_config_set(p: *mut RawPlayer, name: *const c_char, value: c_int) -> c_int;
+    fn nsfp_notify(p: *mut RawPlayer, device: c_int);
 }
+
+/// `MULT_SPEED` value for normal speed.
+pub const SPEED_1X: u32 = 256;
 
 /// Sound chips, in the bit order returned by [`Player::expansions`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,11 +112,24 @@ fn render_lock() -> MutexGuard<'static, ()> {
 }
 
 /// One loaded NSF/NSFe file and the emulator playing it.
+///
+/// `Player` owns the track clock. The core runs endlessly (`PLAY_ADVANCE`), and `Player` starts
+/// the fade-out itself when the elapsed song time plus the fade reaches the track length, unless
+/// it is in endless mode. The core's own clock (`time_in_ms`) is only used for its loop and
+/// silence detection.
 pub struct Player {
     raw: *mut RawPlayer,
-    /// Frames per core call. NSFPlayer::Render/Skip advance the track clock by a truncated
-    /// whole number of ms per call, so calls must cover whole milliseconds or the clock
-    /// falls behind and tracks play past their length (by 33% with 64-frame buffers).
+    rate: u32,
+    track: u32,
+    mask: u32,
+    speed: u32,
+    endless: bool,
+    fading: bool,
+    /// Frames handed out since `start`, each weighted by the speed at the time (256 = 1×).
+    song_ticks: u64,
+    /// Frames per core call. NSFPlayer::Render/Skip advance the core's clock by a truncated
+    /// whole number of ms per call, so calls cover whole milliseconds to keep loop and silence
+    /// detection accurate.
     step: usize,
     /// Rendered frames not yet handed out, as interleaved stereo; read from `pending_pos`.
     pending: Vec<i16>,
@@ -121,7 +143,19 @@ impl Player {
     /// Loads an NSF or NSFe image. On failure returns the core's error message.
     pub fn load(data: &[u8]) -> Result<Player, String> {
         let size = u32::try_from(data.len()).map_err(|_| "File too large".to_string())?;
-        let player = Player { raw: unsafe { nsfp_create() }, step: 1, pending: Vec::new(), pending_pos: 0 };
+        let player = Player {
+            raw: unsafe { nsfp_create() },
+            rate: 48000,
+            track: 0,
+            mask: 0,
+            speed: SPEED_1X,
+            endless: false,
+            fading: false,
+            song_ticks: 0,
+            step: 48,
+            pending: Vec::new(),
+            pending_pos: 0,
+        };
         if unsafe { nsfp_load(player.raw, data.as_ptr(), size) } == 0 {
             let err = decode(unsafe { nsfp_error(player.raw) });
             return Err(if err.is_empty() { "Not a valid NSF file".into() } else { err });
@@ -177,53 +211,164 @@ impl Player {
             .collect()
     }
 
-    /// Resets the emulator and starts `track` (0-based, playlist order).
+    /// Resets the emulator and starts `track` (0-based, playlist order) from the beginning.
     pub fn start(&mut self, track: u32, sample_rate: u32) {
         let _lock = render_lock(); // Reset() renders a few samples to warm up the filters
         unsafe { nsfp_start(self.raw, track as c_int, sample_rate as f64) }
-        self.step = (sample_rate / gcd(sample_rate, 1000)).max(1) as usize;
+        unsafe { nsfp_set_mask(self.raw, self.mask) }
+        self.rate = sample_rate.max(1);
+        self.track = track;
+        self.step = (self.rate / gcd(self.rate, 1000)) as usize;
         self.pending.clear();
         self.pending_pos = 0;
+        self.song_ticks = 0;
+        self.fading = false;
+    }
+
+    pub fn track(&self) -> u32 {
+        self.track
     }
 
     /// Fills `buf` with interleaved stereo samples.
     pub fn render(&mut self, mut buf: &mut [i16]) {
         let _lock = render_lock();
-        let n = self.take_pending(buf.len());
-        buf[..n].copy_from_slice(&self.pending[self.pending_pos - n..self.pending_pos]);
-        buf = &mut buf[n..];
-
-        let whole = buf.len() / 2 / self.step * self.step;
-        if whole > 0 {
-            unsafe { nsfp_render(self.raw, buf.as_mut_ptr(), whole as u32) };
-            buf = &mut buf[whole * 2..];
-        }
-        if !buf.is_empty() {
-            self.refill();
-            let n = self.take_pending(buf.len());
-            buf.copy_from_slice(&self.pending[..n]);
+        while buf.len() >= 2 {
+            let frames = if self.pending_pos < self.pending.len() {
+                let n = self.take_pending(buf.len());
+                buf[..n].copy_from_slice(&self.pending[self.pending_pos - n..self.pending_pos]);
+                n / 2
+            } else if buf.len() / 2 >= self.step {
+                let n = self.piece(buf.len() / 2);
+                unsafe { nsfp_render(self.raw, buf.as_mut_ptr(), n as u32) };
+                n
+            } else {
+                self.refill();
+                continue;
+            };
+            buf = &mut buf[frames * 2..];
+            self.advance(frames);
         }
     }
 
-    /// Advances emulation without producing audio, for seeking.
-    pub fn skip(&mut self, frames: u32) {
+    /// Advances emulation by `frames` output frames without producing audio.
+    pub fn skip(&mut self, frames: u64) {
         let _lock = render_lock();
-        let mut samples = frames as usize * 2;
-        samples -= self.take_pending(samples);
+        let mut left = frames;
+        while left > 0 {
+            let n = if self.pending_pos < self.pending.len() {
+                self.take_pending((left * 2).min(usize::MAX as u64) as usize) as u64 / 2
+            } else if left >= self.step as u64 {
+                // NSFPlayer::Skip computes `1000 * length` in UINT32, so keep calls under ~4.29M frames.
+                let n = (left.min(4_000_000) as usize / self.step * self.step) as u64;
+                unsafe { nsfp_skip(self.raw, n as u32) };
+                n
+            } else {
+                self.refill();
+                continue;
+            };
+            left -= n;
+            self.advance(n as usize);
+        }
+    }
 
-        // NSFPlayer::Skip computes `1000 * length` in UINT32, which overflows past ~4.29M frames.
-        let max = 4_000_000 / self.step * self.step;
-        let mut whole = samples / 2 / self.step * self.step;
-        samples -= whole * 2;
-        while whole > 0 {
-            let n = whole.min(max);
-            unsafe { nsfp_skip(self.raw, n as u32) };
-            whole -= n;
+    /// Moves to `ms` of song time, restarting the track when seeking backwards.
+    pub fn seek(&mut self, ms: u64) {
+        if ms < self.elapsed_ms() {
+            self.start(self.track, self.rate);
         }
-        if samples > 0 {
-            self.refill();
-            self.take_pending(samples);
+        let ticks = ms * self.rate as u64 * SPEED_1X as u64 / 1000;
+        let frames = ticks.saturating_sub(self.song_ticks).div_ceil(self.speed as u64);
+        self.skip(frames);
+    }
+
+    /// Song time since the start of the track, which runs faster or slower than real time
+    /// when the speed is changed.
+    pub fn elapsed_ms(&self) -> u64 {
+        self.song_ticks * 1000 / (self.rate as u64 * SPEED_1X as u64)
+    }
+
+    /// True once the track has finished fading out.
+    pub fn is_stopped(&self) -> bool {
+        unsafe { nsfp_stopped(self.raw) != 0 }
+    }
+
+    /// Length of the current track including fade. May shrink once silence is detected, or
+    /// change once a loop is detected.
+    pub fn length_ms(&self) -> u32 {
+        unsafe { nsfp_length(self.raw) }.max(0) as u32
+    }
+
+    /// In endless mode the track never fades out. Turning it on cancels a fade in progress.
+    pub fn set_endless(&mut self, endless: bool) {
+        self.endless = endless;
+        if endless && self.fading {
+            unsafe { nsfp_cancel_fade(self.raw) }
+            self.fading = false;
         }
+        self.check_end();
+    }
+
+    pub fn endless(&self) -> bool {
+        self.endless
+    }
+
+    /// Playback speed as a `MULT_SPEED` value ([`SPEED_1X`] = normal). Changes tempo, not pitch.
+    pub fn set_speed(&mut self, speed: u32) {
+        self.speed = speed.clamp(SPEED_1X / 8, SPEED_1X * 8);
+        self.config_set("MULT_SPEED", self.speed as i32);
+    }
+
+    pub fn speed(&self) -> u32 {
+        self.speed
+    }
+
+    /// Mutes every channel whose bit is set (see [`CHANNELS`]).
+    pub fn set_mute_mask(&mut self, mask: u32) {
+        self.mask = mask;
+        unsafe { nsfp_set_mask(self.raw, mask) }
+    }
+
+    /// Reads an `NSFPlayerConfig` value, or `None` if there is no such setting.
+    pub fn config_get(&self, name: &str) -> Option<i32> {
+        let name = std::ffi::CString::new(name).ok()?;
+        let mut value = 0;
+        (unsafe { nsfp_config_get(self.raw, name.as_ptr(), &mut value) } != 0).then_some(value)
+    }
+
+    /// Writes an `NSFPlayerConfig` value, returning false if there is no such setting. Device
+    /// settings (volume, pan, options) take effect after [`Player::notify`].
+    pub fn config_set(&mut self, name: &str, value: i32) -> bool {
+        let Ok(name) = std::ffi::CString::new(name) else { return false };
+        unsafe { nsfp_config_set(self.raw, name.as_ptr(), value) != 0 }
+    }
+
+    /// Applies changed settings of one device (see `NSFPlayerConfig::dname`), or all if `None`.
+    pub fn notify(&mut self, device: Option<u32>) {
+        unsafe { nsfp_notify(self.raw, device.map_or(-1, |d| d as c_int)) }
+    }
+
+    /// Counts `frames` handed out and starts the fade-out when the track's time is up.
+    fn advance(&mut self, frames: usize) {
+        self.song_ticks += frames as u64 * self.speed as u64;
+        self.check_end();
+    }
+
+    fn check_end(&mut self) {
+        if self.endless || self.fading {
+            return;
+        }
+        let length = self.length_ms() as u64;
+        let fade = unsafe { nsfp_fade_time(self.raw) }.max(0);
+        if length > 0 && self.elapsed_ms() + fade as u64 >= length {
+            unsafe { nsfp_fade_out(self.raw, fade) }
+            self.fading = true;
+        }
+    }
+
+    /// Whole steps to render directly, at most about 10 ms so fades start on time.
+    fn piece(&self, frames: usize) -> usize {
+        let max = (self.rate as usize / 100).div_ceil(self.step) * self.step;
+        frames.min(max) / self.step * self.step
     }
 
     /// Consumes up to `samples` pending samples, returning how many it took.
@@ -238,21 +383,6 @@ impl Player {
         self.pending.resize(self.step * 2, 0);
         self.pending_pos = 0;
         unsafe { nsfp_render(self.raw, self.pending.as_mut_ptr(), self.step as u32) };
-    }
-
-    /// True once the track has finished fading out.
-    pub fn is_stopped(&self) -> bool {
-        unsafe { nsfp_stopped(self.raw) != 0 }
-    }
-
-    /// Length of the current track including fade. May shrink once silence is detected.
-    pub fn length_ms(&self) -> u32 {
-        unsafe { nsfp_length(self.raw) }.max(0) as u32
-    }
-
-    /// Mutes every channel whose bit is set (see [`CHANNELS`]).
-    pub fn set_mute_mask(&mut self, mask: u32) {
-        unsafe { nsfp_set_mask(self.raw, mask) }
     }
 }
 

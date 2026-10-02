@@ -115,3 +115,66 @@ fn long_seek_keeps_time() {
     let secs = frames as f64 / 48000.0;
     assert!((secs - 305.0).abs() < 0.1, "stopped after {secs:.2} s instead of 305 s");
 }
+
+/// Renders in `chunk`-frame buffers until the track stops; returns wall-clock seconds.
+fn play_out(player: &mut Player, rate: u32, chunk: usize, limit_secs: u64) -> f64 {
+    let mut buf = vec![0i16; chunk * 2];
+    let mut frames = 0u64;
+    while !player.is_stopped() && frames < rate as u64 * limit_secs {
+        player.render(&mut buf);
+        frames += chunk as u64;
+    }
+    frames as f64 / rate as f64
+}
+
+#[test]
+fn endless_never_fades() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    player.set_endless(true);
+    player.seek(304_000);
+    assert_eq!(play_out(&mut player, RATE, 512, 20), 20.0, "stopped in endless mode");
+    assert!(peak(&mut player, 4800) > 1000, "endless playback faded");
+    assert!(player.elapsed_ms() >= 324_000);
+
+    player.set_endless(false); // past the end: fades out right away
+    assert!(play_out(&mut player, RATE, 512, 20) <= 5.1);
+}
+
+#[test]
+fn endless_cancels_fade() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    player.seek(302_000); // in the middle of the fade
+    peak(&mut player, 4800);
+    player.set_endless(true);
+    peak(&mut player, RATE as usize); // fade gain is restored at once, let the DC filter settle
+    assert!(peak(&mut player, 4800) > 2000);
+}
+
+#[test]
+fn speed_changes_song_time() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(0, RATE);
+    player.set_speed(nsfplay_core::SPEED_1X * 2);
+    assert_eq!(player.config_get("MULT_SPEED"), Some(512));
+    player.seek(200_000);
+    assert_eq!(player.elapsed_ms(), 200_000);
+    // 100 s of song left at 2x is 50 s, then a 5 s fade in real time
+    let secs = play_out(&mut player, RATE, 512, 120);
+    assert!((secs - 55.0).abs() < 0.1, "stopped after {secs:.2} s instead of 55 s");
+}
+
+#[test]
+fn config_access() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    assert_eq!(player.config_get("APU1_VOLUME"), Some(128));
+    assert!(player.config_set("APU1_VOLUME", 0));
+    player.notify(Some(0));
+    assert_eq!(player.config_get("NO_SUCH_SETTING"), None);
+    assert!(!player.config_set("NO_SUCH_SETTING", 1));
+
+    player.start(0, RATE);
+    peak(&mut player, RATE as usize / 10);
+    assert!(peak(&mut player, RATE as usize / 10) < 200, "APU1 at volume 0 is still audible");
+}

@@ -25,8 +25,6 @@ pub struct Position {
 struct State {
     player: Option<Player>,
     status: Status,
-    track: u32,
-    frames: u64,
     ended: bool,
     volume: f32,
     mask: u32,
@@ -46,8 +44,6 @@ impl Output {
         let state = Arc::new(Mutex::new(State {
             player: None,
             status: Status::Stopped,
-            track: 0,
-            frames: 0,
             ended: false,
             volume: 1.0,
             mask: 0,
@@ -82,8 +78,6 @@ impl Output {
         let mut s = self.lock();
         s.player = Some(player);
         s.status = Status::Stopped;
-        s.track = 0;
-        s.frames = 0;
         s.ended = false;
         s.mask = 0;
     }
@@ -93,10 +87,8 @@ impl Output {
         let mut s = self.lock();
         let s = &mut *s;
         let Some(player) = s.player.as_mut() else { return };
-        player.start(track, self.sample_rate);
         player.set_mute_mask(s.mask);
-        s.track = track;
-        s.frames = 0;
+        player.start(track, self.sample_rate);
         s.ended = false;
         s.status = Status::Playing;
     }
@@ -111,9 +103,7 @@ impl Output {
     }
 
     pub fn stop(&self) {
-        let mut s = self.lock();
-        s.status = Status::Stopped;
-        s.frames = 0;
+        self.lock().status = Status::Stopped;
     }
 
     /// Jumps to `ms` in the current track by emulating silently up to that point.
@@ -123,15 +113,21 @@ impl Output {
         if s.status == Status::Stopped {
             return;
         }
-        let Some(player) = s.player.as_mut() else { return };
-        let target = ms as u64 * self.sample_rate as u64 / 1000;
-        if target < s.frames {
-            player.start(s.track, self.sample_rate);
-            player.set_mute_mask(s.mask);
-            s.frames = 0;
+        if let Some(player) = s.player.as_mut() {
+            player.seek(ms as u64);
         }
-        player.skip((target - s.frames) as u32);
-        s.frames = target;
+    }
+
+    /// Endless playback (Studio mode): the track never fades out or ends.
+    pub fn set_endless(&self, endless: bool) {
+        if let Some(player) = self.lock().player.as_mut() {
+            player.set_endless(endless);
+        }
+    }
+
+    /// Runs `f` on the loaded player, e.g. to change its config or read its state.
+    pub fn with_player<R>(&self, f: impl FnOnce(&mut Player) -> R) -> Option<R> {
+        self.lock().player.as_mut().map(f)
     }
 
     /// Linear gain, 0.0 to 1.0.
@@ -150,14 +146,13 @@ impl Output {
 
     pub fn position(&self) -> Position {
         let s = self.lock();
+        let active = matches!(s.status, Status::Playing | Status::Paused);
+        let player = s.player.as_ref();
         Position {
             status: s.status,
-            track: s.track,
-            elapsed_ms: (s.frames * 1000 / self.sample_rate as u64) as u32,
-            length_ms: match (&s.player, s.status) {
-                (Some(p), Status::Playing | Status::Paused) => p.length_ms(),
-                _ => 0,
-            },
+            track: player.map_or(0, |p| p.track()),
+            elapsed_ms: player.filter(|_| active).map_or(0, |p| p.elapsed_ms() as u32),
+            length_ms: player.filter(|_| active).map_or(0, |p| p.length_ms()),
         }
     }
 
@@ -206,7 +201,6 @@ where
                     let s = &mut *s;
                     if let (Status::Playing, Some(player)) = (s.status, s.player.as_mut()) {
                         player.render(&mut pcm);
-                        s.frames += frames as u64;
                         gain = s.volume / 32768.0;
                         if player.is_stopped() {
                             s.status = Status::Stopped;
