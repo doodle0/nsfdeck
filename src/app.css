@@ -1,0 +1,117 @@
+/* Palette taken from the cartridge icon: shell grey, label green, note yellow. */
+:root {
+  --bg: #1c1d20;
+  --panel: #25272b;
+  --panel-2: #2e3035;
+  --line: #3a3d43;
+  --text: #ececea;
+  --dim: #9a9ca1;
+  --accent: #2fbf4f;
+  --accent-ink: #0d2a14;
+  --note: #f2d22e;
+  --danger: #ff6b6b;
+  --muted-bg: #1f2023;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f2ef;
+    --panel: #ffffff;
+    --panel-2: #ecece8;
+    --line: #d9d9d4;
+    --text: #1d1e20;
+    --dim: #6b6d72;
+    --accent: #1f9a3c;
+    --accent-ink: #ffffff;
+    --note: #b8930b;
+    --danger: #c83737;
+    --muted-bg: #e6e6e2;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 12px;
+  height: 100%;
+  padding: 14px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+input[type='range'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type='range']:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+/* Shared panel chrome for the track list and channel list. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.panel > h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.link:hover {
+  text-decoration: underline;
+}

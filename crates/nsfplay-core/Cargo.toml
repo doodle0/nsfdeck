@@ -1,0 +1,23 @@
+[package]
+name = "nsfplay-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Safe Rust wrapper around the NSFPlay xgm emulation core"
+links = "nsfplay_xgm"
+publish = false
+build = "build.rs"
+
+[features]
+output = ["dep:cpal"]
+
+[dependencies]
+encoding_rs = "0.8"
+cpal = { version = "0.18", optional = true }
+
+[[example]]
+name = "play"
+required-features = ["output"]
+
+[build-dependencies]
+cc = "1"

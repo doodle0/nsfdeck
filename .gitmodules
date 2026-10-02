@@ -1,0 +1,3 @@
+[submodule "vendor/nsfplay"]
+	path = vendor/nsfplay
+	url = https://github.com/bbbradsmith/nsfplay.git

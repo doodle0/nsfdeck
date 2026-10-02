@@ -1,0 +1,6 @@
+[workspace]
+members = ["crates/nsfplay-core", "src-tauri"]
+resolver = "2"
+
+[profile.dev.package.nsfplay-core]
+opt-level = 2 # the emulator is too slow for realtime audio unoptimized
