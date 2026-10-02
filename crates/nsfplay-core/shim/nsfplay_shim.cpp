@@ -48,27 +48,29 @@ static const char *text_or_raw(const char *s, const char *raw)
 // Read access to protected core state without modifying vendor/nsfplay. A pointer to a
 // protected member may be formed through a derived class, and the resulting `T Base::*`
 // can then be applied to any Base object. The pointer must be named through the derived
-// class ([class.protected]). These classes are never instantiated.
-struct CpuPeek : xgm::NES_CPU { static constexpr auto p_context = &CpuPeek::context; };
-struct BankPeek : xgm::NES_BANK { static constexpr auto p_bankswitch = &BankPeek::bankswitch; };
-struct ApuPeek : xgm::NES_APU { static constexpr auto p_reg = &ApuPeek::reg; };
-struct DmcPeek : xgm::NES_DMC { static constexpr auto p_reg = &DmcPeek::reg; };
-struct Mmc5Peek : xgm::NES_MMC5 { static constexpr auto p_reg = &Mmc5Peek::reg; };
-struct N163Peek : xgm::NES_N106 { static constexpr auto p_reg = &N163Peek::reg; };
-struct Fme7Peek : xgm::NES_FME7 { static constexpr auto p_psg = &Fme7Peek::psg; };
-struct Vrc7Peek : xgm::NES_VRC7 { static constexpr auto p_opll = &Vrc7Peek::opll; };
+// class ([class.protected]). They are functions because MSVC rejects the pointer in a static
+// data member initializer, where the class is still incomplete. The classes are never
+// instantiated.
+struct CpuPeek : xgm::NES_CPU { static constexpr auto p_context() { return &CpuPeek::context; } };
+struct BankPeek : xgm::NES_BANK { static constexpr auto p_bankswitch() { return &BankPeek::bankswitch; } };
+struct ApuPeek : xgm::NES_APU { static constexpr auto p_reg() { return &ApuPeek::reg; } };
+struct DmcPeek : xgm::NES_DMC { static constexpr auto p_reg() { return &DmcPeek::reg; } };
+struct Mmc5Peek : xgm::NES_MMC5 { static constexpr auto p_reg() { return &Mmc5Peek::reg; } };
+struct N163Peek : xgm::NES_N106 { static constexpr auto p_reg() { return &N163Peek::reg; } };
+struct Fme7Peek : xgm::NES_FME7 { static constexpr auto p_psg() { return &Fme7Peek::psg; } };
+struct Vrc7Peek : xgm::NES_VRC7 { static constexpr auto p_opll() { return &Vrc7Peek::opll; } };
 struct Vrc6Peek : xgm::NES_VRC6
 {
-    static constexpr auto p_freq = &Vrc6Peek::freq;
-    static constexpr auto p_volume = &Vrc6Peek::volume;
-    static constexpr auto p_duty = &Vrc6Peek::duty;
-    static constexpr auto p_enable = &Vrc6Peek::enable;
+    static constexpr auto p_freq() { return &Vrc6Peek::freq; }
+    static constexpr auto p_volume() { return &Vrc6Peek::volume; }
+    static constexpr auto p_duty() { return &Vrc6Peek::duty; }
+    static constexpr auto p_enable() { return &Vrc6Peek::enable; }
 };
 struct FdsPeek : xgm::NES_FDS
 {
-    static constexpr auto p_freq = &FdsPeek::freq;
-    static constexpr auto p_master_vol = &FdsPeek::master_vol;
-    static constexpr auto p_wave = &FdsPeek::wave;
+    static constexpr auto p_freq() { return &FdsPeek::freq; }
+    static constexpr auto p_master_vol() { return &FdsPeek::master_vol; }
+    static constexpr auto p_wave() { return &FdsPeek::wave; }
 };
 
 static void appendf(std::string &out, const char *fmt, ...)
@@ -202,6 +204,11 @@ void nsfp_start(nsfp *p, int track, double rate)
     p->player.SetPlayFreq(rate);
     p->player.SetChannels(2);
     p->player.SetSong(track);
+    // Silence and loop detection store the length they find in the NSF, and Reset() does not
+    // clear it, so without this every later track would inherit the previous track's length.
+    p->nsf.time_in_ms = -1;
+    p->nsf.loop_in_ms = -1;
+    p->nsf.fade_in_ms = -1;
     p->player.Reset();
 }
 
@@ -282,7 +289,7 @@ const char *nsfp_dump(nsfp *p)
     appendf(o, "  speed  NTSC %u us   PAL %u us\n", n.speed_ntsc, n.speed_pal);
     appendf(o, "  region flags $%02X   chips $%02X   NSF2 flags $%02X\n", n.pal_ntsc, n.soundchip, n.nsf2_bits);
 
-    const K6502_Context &c = pl.cpu.*CpuPeek::p_context;
+    const K6502_Context &c = pl.cpu.*CpuPeek::p_context();
     const char *flags = "NV-BDIZC";
     char fl[9];
     for (int i = 0; i < 8; ++i) fl[i] = (c.P >> (7 - i)) & 1 ? flags[i] : '.';
@@ -291,7 +298,7 @@ const char *nsfp_dump(nsfp *p)
     appendf(o, "  A=%02X X=%02X Y=%02X S=%02X P=%02X [%s] PC=%04X\n", c.A & 0xff, c.X & 0xff, c.Y & 0xff,
             c.S & 0xff, c.P & 0xff, fl, c.PC & 0xffff);
 
-    const int *banks = pl.bank.*BankPeek::p_bankswitch;
+    const int *banks = pl.bank.*BankPeek::p_bankswitch();
     o += "\nBANKS (4 KB pages)\n ";
     for (int i = n.use_fds ? 6 : 8; i < 16; ++i) appendf(o, " $%X000=%02X", i, banks[i] & 0xff);
     o += "\n";
@@ -302,15 +309,15 @@ const char *nsfp_dump(nsfp *p)
     hex_rows(o, 0x6000, 0x2000, [&](uint32_t a) { return read_mem(p, 0x6000 + a); });
 
     o += "\n2A03\n";
-    const xgm::UINT8 *apu = pl.apu->*ApuPeek::p_reg;
-    const xgm::UINT8 *dmc = pl.dmc->*DmcPeek::p_reg;
+    const xgm::UINT8 *apu = pl.apu->*ApuPeek::p_reg();
+    const xgm::UINT8 *dmc = pl.dmc->*DmcPeek::p_reg();
     hex_rows(o, 0x4000, 8, [&](uint32_t a) { return apu[a]; });
     hex_rows(o, 0x4008, 0x10, [&](uint32_t a) { return dmc[a]; });
 
     if (n.use_mmc5)
     {
         o += "\nMMC5\n";
-        const xgm::UINT8 *r = pl.mmc5->*Mmc5Peek::p_reg;
+        const xgm::UINT8 *r = pl.mmc5->*Mmc5Peek::p_reg();
         hex_rows(o, 0x5000, 8, [&](uint32_t a) { return r[a]; });
     }
     if (n.use_vrc6)
@@ -319,34 +326,34 @@ const char *nsfp_dump(nsfp *p)
         const xgm::NES_VRC6 &v = *pl.vrc6;
         for (int i = 0; i < 3; ++i)
             appendf(o, "  %-7s freq %4u  vol %2d  duty %d  %s\n", i == 2 ? "saw" : i ? "pulse 2" : "pulse 1",
-                    (v.*Vrc6Peek::p_freq)[i], (v.*Vrc6Peek::p_volume)[i], i < 2 ? (v.*Vrc6Peek::p_duty)[i] : 0,
-                    (v.*Vrc6Peek::p_enable)[i] ? "on" : "off");
+                    (v.*Vrc6Peek::p_freq())[i], (v.*Vrc6Peek::p_volume())[i], i < 2 ? (v.*Vrc6Peek::p_duty())[i] : 0,
+                    (v.*Vrc6Peek::p_enable())[i] ? "on" : "off");
     }
     if (n.use_fme7)
     {
         o += "\n5B (registers 0-F)\n";
-        const PSG *psg = pl.fme7->*Fme7Peek::p_psg;
+        const PSG *psg = pl.fme7->*Fme7Peek::p_psg();
         hex_rows(o, 0, 0x10, [&](uint32_t a) { return psg->reg[a]; });
     }
     if (n.use_vrc7)
     {
         o += "\nVRC7 (registers 00-3F)\n";
-        const OPLL *opll = pl.vrc7->*Vrc7Peek::p_opll;
+        const OPLL *opll = pl.vrc7->*Vrc7Peek::p_opll();
         hex_rows(o, 0, 0x40, [&](uint32_t a) { return opll->reg[a]; });
     }
     if (n.use_n106)
     {
         o += "\nN163 (internal RAM)\n";
-        const xgm::UINT32 *r = pl.n106->*N163Peek::p_reg;
+        const xgm::UINT32 *r = pl.n106->*N163Peek::p_reg();
         hex_rows(o, 0, 0x80, [&](uint32_t a) { return (uint8_t)r[a]; });
     }
     if (n.use_fds)
     {
         o += "\nFDS\n";
         const xgm::NES_FDS &f = *pl.fds;
-        appendf(o, "  wave freq %u   mod freq %u   master vol %u\n  wave", (f.*FdsPeek::p_freq)[1],
-                (f.*FdsPeek::p_freq)[0], f.*FdsPeek::p_master_vol);
-        for (int i = 0; i < 64; ++i) appendf(o, "%s%02d", i % 32 ? " " : "\n   ", (f.*FdsPeek::p_wave)[1][i]);
+        appendf(o, "  wave freq %u   mod freq %u   master vol %u\n  wave", (f.*FdsPeek::p_freq())[1],
+                (f.*FdsPeek::p_freq())[0], f.*FdsPeek::p_master_vol());
+        for (int i = 0; i < 64; ++i) appendf(o, "%s%02d", i % 32 ? " " : "\n   ", (f.*FdsPeek::p_wave())[1][i]);
         o += "\n";
     }
     return o.c_str();

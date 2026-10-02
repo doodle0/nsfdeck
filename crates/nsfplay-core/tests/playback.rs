@@ -191,3 +191,13 @@ fn dumps_state() {
     assert!(dump.contains("PC="));
     assert!(dump.contains("  $4000:"));
 }
+
+#[test]
+fn detected_length_does_not_carry_over() {
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(1, RATE); // silent track: auto-stop shortens its length
+    play_out(&mut player, RATE, 4800, 20);
+    assert!(player.length_ms() < 10_000);
+    player.start(0, RATE);
+    assert_eq!(player.length_ms(), 305_000);
+}
