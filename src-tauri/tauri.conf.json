@@ -16,7 +16,8 @@
         "width": 820,
         "height": 600,
         "minWidth": 560,
-        "minHeight": 440
+        "minHeight": 440,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --no-proxy-server"
       }
     ],
     "security": {

@@ -18,6 +18,8 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 - **Never modify `vendor/nsfplay`.** Work around upstream issues in `crates/nsfplay-core/shim/` or `src/lib.rs`, and propose real fixes upstream.
 - Core source lists in `build.rs` mirror upstream `contrib/Makefile`; update them when bumping the submodule.
 - Keep `nsfplay-core` free of Tauri dependencies; the app talks to it only through `Output`/`Player`.
+- **The webview runs without a proxy** (`--no-proxy-server` in `app.windows[0].additionalBrowserArgs`, `src-tauri/tauri.conf.json`; Windows/WebView2 only, the option is ignored elsewhere). Without it, WebView2 resolves the system proxy (WPAD auto-detect) before its first HTTP request, which took ~27 s on the dev machine: a white screen under `tauri dev`. Release builds load from a custom protocol and never waited. Consequences: the webview ignores system and corporate proxies, so anything loaded from the network inside the webview goes direct. That's fine while the UI only loads its own assets and talks to Rust over IPC. Fetch network resources in Rust, not from the webview, or revisit this flag. Setting `additionalBrowserArgs` replaces Tauri's defaults, so the value repeats `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`; keep that when editing it.
+- A debug exe built by `tauri dev` loads `devUrl` (`localhost:1420`); run on its own without the dev server it shows Edge's "connection refused" page. `tauri build --debug` writes the same path with embedded assets, so the last command wins.
 
 ## Upstream behavior to know about
 

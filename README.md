@@ -84,6 +84,11 @@ Then:
     pnpm tauri dev                # run with hot reload
     pnpm tauri build              # build installers into target/release/bundle/
 
+On Windows the app's webview (WebView2) runs with `--no-proxy-server`, set in
+`src-tauri/tauri.conf.json`. Otherwise WebView2 waits for proxy auto-detection before loading
+the page, which can leave `pnpm tauri dev` on a white screen for tens of seconds. The UI never
+loads anything from the network, so system proxy settings don't apply to it.
+
 ## Layout
 
 | Path | Contents |
