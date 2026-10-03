@@ -8,7 +8,7 @@
   // Position the user is dragging the seek bar to (0-1000), or null when not dragging.
   let dragging = $state(/** @type {number | null} */ (null));
 
-  let range = $derived(player.seekRangeMs);
+  let range = $derived(player.lengthMs);
   let progress = $derived(
     player.active && range > 0 ? Math.min(1000, (player.status.elapsedMs / range) * 1000) : 0,
   );
@@ -39,7 +39,7 @@
       disabled={!canPrev}
       onclick={() => player.step(-1)}
     >
-      <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z" /></svg>
+      <svg viewBox="0 0 24 24"><path d="M5 5h2v14H5zM19 5v14L8 12z" /></svg>
     </button>
     <button
       class="icon primary"
@@ -63,11 +63,11 @@
       disabled={!canNext}
       onclick={() => player.step(1)}
     >
-      <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z" /></svg>
+      <svg viewBox="0 0 24 24"><path d="M17 5h2v14h-2zM5 5v14l11-7z" /></svg>
     </button>
   </div>
 
-  {#if player.mode !== 'studio'}
+  {#if !player.endless}
     <span class="time">{formatTime(shownElapsed)}</span>
     <input
       class="seek"
@@ -81,13 +81,9 @@
       oninput={(e) => (dragging = Number(e.currentTarget.value))}
       onchange={commitSeek}
     />
-    {#if player.endless}
-      <span class="time infinite" title="Loops endlessly">∞</span>
-    {:else}
-      <span class="time">{formatTime(player.lengthMs)}</span>
-    {/if}
+    <span class="time">{formatTime(player.lengthMs)}</span>
   {:else}
-    <span class="studio-note dim">Loops endlessly · use the timeline to seek</span>
+    <span class="studio-note dim">Loops, or stops at silence · seek on the timeline</span>
   {/if}
 
   <!-- wraps onto its own row in narrow windows -->
@@ -168,6 +164,7 @@
 
   .buttons {
     display: flex;
+    align-items: center;
     gap: 4px;
   }
 
@@ -248,11 +245,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .infinite {
-    font-size: 18px;
-    line-height: 1;
   }
 
   .seek {

@@ -1,4 +1,4 @@
-// Studio mode's view of the current track: its intro + loop timeline, the playhead within it,
+// The timeline view of the current track in Studio and Developer modes: its intro + loop timeline, the playhead within it,
 // and the A–B region. Positions are in "timeline time": song time folded into the first pass
 // of the loop, since every pass plays the same music.
 
@@ -8,6 +8,8 @@ import { playlist, trackKey } from './playlist.svelte.js';
 
 /** One NES frame (NTSC), the smallest step when paused. */
 export const FRAME_MS = 1000 / 60.0988;
+/** Timeline length while a track's end is unknown (Listen's length settings don't apply here). */
+const GUESS_MS = 5 * 60_000;
 /** The longest the playhead moves on its own between status polls, in real time. */
 const EXTRAPOLATE_MS = 500;
 /** The closest the timeline zooms in: this much of it fills the view. */
@@ -50,14 +52,14 @@ class Studio {
   /** The playhead on the timeline. */
   position = $derived(this.fold(this.elapsed));
 
-  /** Whether Studio stops the track where it goes silent: no loop, and Listen's auto-stop on. */
-  stopsAtSilence = $derived(player.mode === 'studio' && playlist.settings.autoStop && !this.loop);
+  /** Whether playback stops where the track goes silent: in endless playback, without a loop. */
+  stopsAtSilence = $derived(player.endless && !this.loop);
 
   /**
    * Where the track ends on the timeline, how that is known, and whether playback can pass it
    * (`hard: false`). The end is one pass of its loop (the playhead folds back, so it is never
-   * passed), the silence found by analysis or where playback stopped for it (hard when Studio
-   * stops there), its length in the file, or (`guess`) Listen's default length while analysis
+   * passed), the silence found by analysis or where playback stopped for it (hard when playback
+   * stops there), its length in the file, or (`guess`) a fixed 5:00 while analysis
    * runs or when it found neither.
    * @type {{ ms: number, source: 'loop' | 'silence' | 'file' | 'guess', hard: boolean }}
    */
@@ -71,7 +73,7 @@ class Studio {
     }
     const fileMs = player.file?.tracks[this.track]?.lengthMs;
     if (fileMs) return { ms: fileMs, source: 'file', hard: false };
-    return { ms: playlist.settings.playMs + playlist.settings.fadeMs, source: 'guess', hard: false };
+    return { ms: GUESS_MS, source: 'guess', hard: false };
   });
   end = $derived(this.ending.ms);
 
@@ -179,7 +181,7 @@ class Studio {
   /**
    * Keeps the backend in step: analyzes the track for its timeline, and sends the A–B region.
    * Also shows each new track whole, pages the view along with the playhead, and stops a track
-   * without a loop where it goes silent, as Listen does: at the silence analysis found, or
+   * without a loop where it goes silent: at the silence analysis found, or
    * (analysis found no end within its limit) when the core's live detector hears 3 s of it.
    * The region is in first-pass time, so if it turns on while a later pass plays, playback
    * first moves to the same spot in the first pass (the same music).

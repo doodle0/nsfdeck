@@ -48,7 +48,10 @@ class Player {
   /** 0-100 slider position. */
   volume = $state(80);
   error = $state('');
-  /** Listen plays tracks to their end; Studio and Developer loop the current track endlessly. */
+  /**
+   * Listen plays tracks to their end, with its playlist, fades and length settings; Studio and
+   * Developer loop the current track endlessly (stopping where it goes silent) on the timeline.
+   */
   mode = $state(savedMode());
   /** Speed multiplier used in Studio and Developer modes; Listen always plays at 1×. */
   speed = $state(1);
@@ -66,15 +69,6 @@ class Player {
   /** Length shown for the current track: live from the engine while playing, else from the file. */
   lengthMs = $derived(
     this.active ? this.status.lengthMs : (this.file?.tracks[this.status.track]?.lengthMs ?? 0),
-  );
-  /**
-   * Range of the seek bar. In endless modes playback runs past the track's length, so the range
-   * grows to the next whole minute after the playhead (until Studio gets its intro + loop timeline).
-   */
-  seekRangeMs = $derived(
-    this.endless
-      ? Math.max(this.lengthMs, Math.ceil((this.status.elapsedMs + 1) / 60000) * 60000)
-      : this.lengthMs,
   );
 
   /** Invokes a backend command, surfacing failures in the error toast. */

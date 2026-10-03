@@ -55,17 +55,17 @@
       return;
     }
     if (e.target instanceof HTMLInputElement && e.key !== ' ') return;
-    // Studio steps through its timeline: 1 s, or one frame while paused
+    // Studio and Developer step through the timeline: 1 s, or one frame while paused
     const nudge = player.status.state === 'paused' ? FRAME_MS : 1000;
-    const studioMode = player.mode === 'studio';
+    const timeline = player.endless;
     const actions = {
       ' ': () => player.togglePlay(),
       ArrowUp: () => player.step(-1),
       ArrowDown: () => player.step(1),
-      ArrowLeft: () => (studioMode ? studio.step(-nudge) : player.seek(player.status.elapsedMs - 5000)),
-      ArrowRight: () => (studioMode ? studio.step(nudge) : player.seek(player.status.elapsedMs + 5000)),
+      ArrowLeft: () => (timeline ? studio.step(-nudge) : player.seek(player.status.elapsedMs - 5000)),
+      ArrowRight: () => (timeline ? studio.step(nudge) : player.seek(player.status.elapsedMs + 5000)),
     };
-    if (studioMode && !e.ctrlKey && !e.metaKey) {
+    if (timeline && !e.ctrlKey && !e.metaKey) {
       actions['+'] = actions['='] = () => studio.zoom(2);
       actions['-'] = () => studio.zoom(1 / 2);
       actions['0'] = () => studio.fit();
@@ -84,12 +84,10 @@
 <main class={player.mode}>
   {#if player.mode === 'listen'}
     <PlaylistView />
-  {:else if player.mode === 'studio'}
-    <div class="wide"><Timeline /></div>
-    <Channels />
-    <TrackList />
   {:else}
-    <DumpView />
+    <!-- Studio and Developer share the timeline and endless playback -->
+    <div class="wide"><Timeline /></div>
+    {#if player.mode === 'studio'}<Channels />{:else}<DumpView />{/if}
     <TrackList />
   {/if}
 </main>
@@ -111,7 +109,8 @@
     grid-template-columns: 1fr;
   }
 
-  main.studio {
+  main.studio,
+  main.developer {
     grid-template-rows: auto 1fr;
   }
 
