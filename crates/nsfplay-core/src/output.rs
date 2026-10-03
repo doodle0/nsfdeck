@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
-use crate::{ChannelState, Length, Player, SPEED_1X};
+use crate::{ChannelState, Length, Player, SilenceStop, SPEED_1X};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -20,6 +20,7 @@ pub enum Status {
 pub struct Position {
     pub status: Status,
     pub track: u32,
+    /// Song time; while stopped, where the track ended on its own (0 after [`Output::stop`]).
     pub elapsed_ms: u32,
     pub length_ms: u32,
 }
@@ -30,11 +31,14 @@ struct State {
     data: Option<Arc<[u8]>>,
     status: Status,
     ended: bool,
+    /// Where the current track ended on its own, while it stays stopped there.
+    ended_at: Option<u32>,
     volume: f32,
     mask: u32,
     endless: bool,
     speed: u32,
     length: Option<Length>,
+    silence_stop: Option<SilenceStop>,
     /// Config values set by the app (the mixer), applied to every player built here.
     config: BTreeMap<String, i32>,
     rate: u32,
@@ -61,6 +65,7 @@ struct Recipe {
     endless: bool,
     speed: u32,
     length: Option<Length>,
+    silence_stop: Option<SilenceStop>,
     config: BTreeMap<String, i32>,
     generation: u64,
 }
@@ -83,6 +88,7 @@ impl Recipe {
             endless: s.endless,
             speed: s.speed,
             length: s.length,
+            silence_stop: s.silence_stop,
             config: s.config.clone(),
             generation: s.generation,
         })
@@ -96,6 +102,7 @@ impl Recipe {
         p.set_speed(self.speed);
         p.set_mute_mask(self.mask);
         p.set_length(self.length);
+        p.set_silence_stop(self.silence_stop);
         apply_config(&mut p, &self.config);
         p.start(self.track, self.rate);
         p.seek(ms as u64);
@@ -121,11 +128,13 @@ impl Output {
             data: None,
             status: Status::Stopped,
             ended: false,
+            ended_at: None,
             volume: 1.0,
             mask: 0,
             endless: false,
             speed: SPEED_1X,
             length: None,
+            silence_stop: None,
             config: BTreeMap::new(),
             rate: 48000,
             region: None,
@@ -177,6 +186,8 @@ impl Output {
         s.data = Some(data);
         s.status = Status::Stopped;
         s.ended = false;
+        s.ended_at = None;
+        s.silence_stop = None;
         s.mask = 0;
         s.region = None;
         s.cue = None;
@@ -185,16 +196,19 @@ impl Output {
     }
 
     /// Starts `track` (0-based) from the beginning. `length` overrides how long it plays
-    /// (see [`Player::set_length`]). Clears the A–B region.
+    /// (see [`Player::set_length`]). Clears the A–B region and the silence stop.
     pub fn play(&self, track: u32, length: Option<Length>) {
         let mut s = self.lock();
         let s = &mut *s;
         let Some(player) = s.player.as_mut() else { return };
         player.set_mute_mask(s.mask);
         player.set_length(length);
+        player.set_silence_stop(None);
         player.start(track, self.sample_rate);
         s.length = length;
+        s.silence_stop = None;
         s.ended = false;
+        s.ended_at = None;
         s.status = Status::Playing;
         s.region = None;
         s.cue = None;
@@ -212,28 +226,32 @@ impl Output {
     }
 
     pub fn stop(&self) {
-        self.lock().status = Status::Stopped;
+        let mut s = self.lock();
+        s.status = Status::Stopped;
+        s.ended_at = None;
     }
 
     /// Jumps to `ms` of song time in the current track. Short forward jumps are emulated in
     /// place; anything else builds a new player at the target while the current one keeps
     /// playing, then swaps it in (if no newer seek, play or load came in meanwhile). Blocks
-    /// the calling thread while it emulates.
+    /// the calling thread while it emulates. After the track ended on its own, playback
+    /// resumes at `ms`.
     pub fn seek(&self, ms: u32) {
-        let (recipe, seq) = {
+        let (recipe, seq, resume) = {
             let mut s = self.lock();
             let s = &mut *s;
-            if s.status == Status::Stopped {
+            let resume = s.status == Status::Stopped;
+            if resume && s.ended_at.is_none() {
                 return;
             }
             s.seek_seq += 1;
             let Some(player) = s.player.as_mut() else { return };
             let elapsed = player.elapsed_ms();
-            if ms as u64 >= elapsed && ms as u64 - elapsed <= 250 {
+            if !resume && ms as u64 >= elapsed && ms as u64 - elapsed <= 250 {
                 player.seek(ms as u64);
                 return;
             }
-            (Recipe::of(s), s.seek_seq)
+            (Recipe::of(s), s.seek_seq, resume)
         };
         let Some(recipe) = recipe else { return };
         let Some(player) = recipe.build_at(ms) else { return };
@@ -242,6 +260,10 @@ impl Output {
             s.player = Some(player);
             s.generation += 1;
             s.cue = None;
+            if resume && s.status == Status::Stopped && s.ended_at.is_some() {
+                s.status = Status::Playing;
+                s.ended_at = None;
+            }
             if s.region.is_some() {
                 let _ = s.cue_wanted.try_send(());
             }
@@ -273,7 +295,21 @@ impl Output {
         }
     }
 
-    /// Endless playback (Studio mode): the track never fades out or ends.
+    /// Where the current track ends in endless playback (see [`Player::set_silence_stop`]).
+    /// Cleared by [`Output::play`].
+    pub fn set_silence_stop(&self, stop: Option<SilenceStop>) {
+        let mut s = self.lock();
+        s.silence_stop = stop;
+        if let Some(player) = s.player.as_mut() {
+            player.set_silence_stop(stop);
+        }
+        if let Some(cue) = s.cue.as_mut() {
+            cue.set_silence_stop(stop);
+        }
+    }
+
+    /// Endless playback (Studio mode): the track never fades out or ends, except at its
+    /// silence stop.
     pub fn set_endless(&self, endless: bool) {
         let mut s = self.lock();
         s.endless = endless;
@@ -352,7 +388,10 @@ impl Output {
         Position {
             status: s.status,
             track: player.map_or(0, |p| p.track()),
-            elapsed_ms: player.filter(|_| active).map_or(0, |p| p.elapsed_ms() as u32),
+            elapsed_ms: match player.filter(|_| active) {
+                Some(p) => p.elapsed_ms() as u32,
+                None => s.ended_at.unwrap_or(0),
+            },
             length_ms: player.filter(|_| active).map_or(0, |p| p.length_ms()),
         }
     }
@@ -459,7 +498,8 @@ where
                     if s.status == Status::Playing && s.player.is_some() {
                         render(s, &mut pcm);
                         gain = s.volume / 32768.0;
-                        if s.player.as_ref().is_some_and(|p| p.is_stopped()) {
+                        if let Some(p) = s.player.as_ref().filter(|p| p.is_stopped()) {
+                            s.ended_at = Some(p.elapsed_ms() as u32);
                             s.status = Status::Stopped;
                             s.ended = true;
                         }
@@ -496,11 +536,13 @@ mod tests {
             data: Some(data),
             status: Status::Playing,
             ended: false,
+            ended_at: None,
             volume: 1.0,
             mask: 0,
             endless: true,
             speed: SPEED_1X,
             length: None,
+            silence_stop: None,
             rate: RATE,
             region,
             cue: None,

@@ -136,6 +136,17 @@ pub struct Length {
     pub fade_ms: u32,
 }
 
+/// Where a track in endless mode still ends: Studio stops tracks that go silent instead of
+/// looping them forever.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SilenceStop {
+    /// At this song time (where analysis found the silence).
+    At(u32),
+    /// When the core's live detector reports silence: `STOP_SEC` (3 s) of it, with `AUTO_STOP`
+    /// on and no channel muted.
+    Detect,
+}
+
 /// Result of the core's silence and loop detection for the current track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Detected {
@@ -167,7 +178,7 @@ fn render_lock() -> MutexGuard<'static, ()> {
 ///
 /// `Player` owns the track clock. The core runs endlessly (`PLAY_ADVANCE`), and `Player` starts
 /// the fade-out itself when the elapsed song time plus the fade reaches the track length, unless
-/// it is in endless mode. The core's own clock (`time_in_ms`) is only used for its loop and
+/// it is in endless mode (where only a [`SilenceStop`] ends it). The core's own clock (`time_in_ms`) is only used for its loop and
 /// silence detection.
 pub struct Player {
     raw: *mut RawPlayer,
@@ -178,6 +189,7 @@ pub struct Player {
     endless: bool,
     /// Set by the caller (e.g. a playlist entry's duration); otherwise the core's length is used.
     length: Option<Length>,
+    silence_stop: Option<SilenceStop>,
     fading: bool,
     /// Frames handed out since `start`, each weighted by the speed at the time (256 = 1×).
     song_ticks: u64,
@@ -205,6 +217,7 @@ impl Player {
             speed: SPEED_1X,
             endless: false,
             length: None,
+            silence_stop: None,
             fading: false,
             song_ticks: 0,
             step: 48,
@@ -418,7 +431,15 @@ impl Player {
         }
     }
 
-    /// In endless mode the track never fades out. Turning it on cancels a fade in progress.
+    /// Where the track ends in endless mode (otherwise it never does). Kept across
+    /// [`Player::start`].
+    pub fn set_silence_stop(&mut self, stop: Option<SilenceStop>) {
+        self.silence_stop = stop;
+        self.check_end();
+    }
+
+    /// In endless mode the track never fades out, except at its [`SilenceStop`]. Turning it on
+    /// cancels a fade in progress.
     pub fn set_endless(&mut self, endless: bool) {
         self.endless = endless;
         if endless && self.fading {
@@ -497,7 +518,19 @@ impl Player {
     }
 
     fn check_end(&mut self) {
-        if self.endless || self.fading {
+        if self.fading {
+            return;
+        }
+        if self.endless {
+            let silent = match self.silence_stop {
+                Some(SilenceStop::At(ms)) => self.elapsed_ms() >= ms as u64,
+                Some(SilenceStop::Detect) => matches!(self.detected(), Detected::Silence { .. }),
+                None => false,
+            };
+            if silent {
+                unsafe { nsfp_fade_out(self.raw, 0) }
+                self.fading = true;
+            }
             return;
         }
         let length = self.length_ms() as u64;

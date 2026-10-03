@@ -8,6 +8,8 @@ import { playlist, trackKey } from './playlist.svelte.js';
 
 /** One NES frame (NTSC), the smallest step when paused. */
 export const FRAME_MS = 1000 / 60.0988;
+/** The longest the playhead moves on its own between status polls, in real time. */
+const EXTRAPOLATE_MS = 500;
 /** The closest the timeline zooms in: this much of it fills the view. */
 const MIN_VIEW_MS = 1000;
 
@@ -23,12 +25,19 @@ class Studio {
   /** Ticks while playing, so the playhead moves smoothly between status polls. */
   now = $state(0);
 
-  /** Song time, interpolated from the last status poll. */
+  /** How far past the last status poll `elapsed` may run (polls come every 33 ms). */
+  ahead = $derived(EXTRAPOLATE_MS * player.speed);
+
+  /**
+   * Song time, interpolated from the last status poll. It never runs past an end where playback
+   * stops, so the playhead halts there instead of overshooting until the stop is reported.
+   */
   elapsed = $derived.by(() => {
     const s = player.status;
-    if (s.state === 'stopped') return 0;
+    if (s.state === 'stopped') return Math.min(s.elapsedMs, this.end); // 0, or where it ended
     const since = s.state === 'playing' ? Math.max(0, this.now - player.statusAt) : 0;
-    return s.elapsedMs + Math.min(since, 500) * player.speed;
+    const t = s.elapsedMs + Math.min(since * player.speed, this.ahead);
+    return this.ending.source === 'silence' && this.ending.hard ? Math.min(t, this.end) : t;
   });
 
   /** Which pass through the loop is playing: 0 in the intro, then 1, 2, … */
@@ -41,28 +50,42 @@ class Studio {
   /** The playhead on the timeline. */
   position = $derived(this.fold(this.elapsed));
 
+  /** Whether Studio stops the track where it goes silent: no loop, and Listen's auto-stop on. */
+  stopsAtSilence = $derived(player.mode === 'studio' && playlist.settings.autoStop && !this.loop);
+
   /**
-   * Where the track ends on the timeline, and how that is known: one pass of its loop, the
-   * silence found by analysis, its length in the file, or (`guess`) Listen's default length
-   * while analysis runs or when it found neither a loop nor an end.
-   * @type {{ ms: number, source: 'loop' | 'silence' | 'file' | 'guess' }}
+   * Where the track ends on the timeline, how that is known, and whether playback can pass it
+   * (`hard: false`). The end is one pass of its loop (the playhead folds back, so it is never
+   * passed), the silence found by analysis or where playback stopped for it (hard when Studio
+   * stops there), its length in the file, or (`guess`) Listen's default length while analysis
+   * runs or when it found neither.
+   * @type {{ ms: number, source: 'loop' | 'silence' | 'file' | 'guess', hard: boolean }}
    */
   ending = $derived.by(() => {
-    if (this.loop) return { ms: this.loop.endMs, source: 'loop' };
-    if (this.analysis?.kind === 'silence') return { ms: this.analysis.atMs, source: 'silence' };
+    if (this.loop) return { ms: this.loop.endMs, source: 'loop', hard: true };
+    if (this.analysis?.kind === 'silence') {
+      return { ms: this.analysis.atMs, source: 'silence', hard: this.stopsAtSilence };
+    }
+    if (player.ended && player.status.track === this.track) {
+      return { ms: player.status.elapsedMs, source: 'silence', hard: true };
+    }
     const fileMs = player.file?.tracks[this.track]?.lengthMs;
-    if (fileMs) return { ms: fileMs, source: 'file' };
-    return { ms: playlist.settings.playMs + playlist.settings.fadeMs, source: 'guess' };
+    if (fileMs) return { ms: fileMs, source: 'file', hard: false };
+    return { ms: playlist.settings.playMs + playlist.settings.fadeMs, source: 'guess', hard: false };
   });
   end = $derived(this.ending.ms);
 
   /**
-   * Length of the timeline: the track's end, or (once playback runs past it, which only a track
-   * without a loop can do) the next whole minute after the playhead.
+   * Length of the timeline: the track's end, or (once playback can run past it) the next whole
+   * minute after where it may be. That follows the reported song time plus the most the playhead
+   * can run ahead of it, never the interpolated playhead itself, so the span only changes when
+   * playback really passes the end, and the playhead always fits.
    */
-  span = $derived(
-    this.position <= this.end ? this.end : Math.ceil(this.position / 60_000) * 60_000,
-  );
+  span = $derived.by(() => {
+    if (this.ending.hard) return this.end;
+    const reach = player.active ? player.status.elapsedMs + this.ahead : 0;
+    return reach <= this.end ? this.end : Math.ceil(reach / 60_000) * 60_000;
+  });
 
   // ---- the visible part of the timeline: zoom and scroll ----
 
@@ -155,7 +178,9 @@ class Studio {
 
   /**
    * Keeps the backend in step: analyzes the track for its timeline, and sends the A–B region.
-   * Also shows each new track whole, and pages the view along with the playhead.
+   * Also shows each new track whole, pages the view along with the playhead, and stops a track
+   * without a loop where it goes silent, as Listen does: at the silence analysis found, or
+   * (analysis found no end within its limit) when the core's live detector hears 3 s of it.
    * The region is in first-pass time, so if it turns on while a later pass plays, playback
    * first moves to the same spot in the first pass (the same music).
    */
@@ -171,6 +196,17 @@ class Studio {
       });
       $effect(() => {
         if (player.endless && player.active && this.path) playlist.requestAnalysis(this.path, this.track);
+      });
+      $effect(() => {
+        void player.starts; // re-send after every track start, which clears it in the backend
+        const a = this.analysis;
+        const on = this.stopsAtSilence;
+        player
+          .call('set_silence_stop', {
+            atMs: on && a?.kind === 'silence' ? a.atMs : null,
+            detect: on && a?.kind === 'none',
+          })
+          .catch(() => {});
       });
       $effect(() => {
         const r = this.region;

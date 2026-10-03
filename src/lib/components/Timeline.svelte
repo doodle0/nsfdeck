@@ -112,7 +112,7 @@
 
   /** @param {PointerEvent & { currentTarget: SVGSVGElement }} e */
   function onDown(e) {
-    if (e.button !== 0 || !player.active) return;
+    if (e.button !== 0 || (!player.active && !player.ended)) return;
     const at = pointerMs(e);
     const r = studio.region;
     const near = (ms) => Math.abs(x(ms) - x(at)) <= HANDLE_PX;
@@ -150,9 +150,9 @@
       const intro = l.startMs < 50 ? 'no intro' : `intro ${fmt(l.startMs)}`;
       return `${intro} · loop ${fmt(l.endMs - l.startMs)}${l.manual ? ' (set by hand)' : ''}`;
     }
+    if (studio.ending.source === 'silence') return `Ends at ${fmt(studio.end)}`;
     const a = studio.analysis;
     if (!a) return 'Finding the loop…';
-    if (a.kind === 'silence') return `Ends at ${fmt(a.atMs)}`;
     return 'No loop found. Set one with the loop buttons.';
   });
 </script>
@@ -256,7 +256,7 @@
       {#if endMark && x(studio.end) >= 0 && x(studio.end) <= width}
         <line class="end-mark" x1={x(studio.end)} x2={x(studio.end)} y1={BAND_Y - 4} y2={BAND_Y + BAND_H + 4} />
       {/if}
-      {#if player.active}
+      {#if player.active || player.ended}
         {@const px = x(drag?.kind === 'seek' ? drag.at : studio.position)}
         {#if px >= 0 && px <= width}
           <line class="playhead" x1={px} x2={px} y1={BAND_Y - 6} y2={BAND_Y + BAND_H + 6} />
@@ -291,7 +291,7 @@
         {#if shownRegion}
           <span class="o-region" style:left={pct(shownRegion.a)} style:width={pct(shownRegion.b - shownRegion.a)}></span>
         {/if}
-        {#if player.active}
+        {#if player.active || player.ended}
           <span class="o-playhead" style:left={pct(studio.position)}></span>
         {/if}
         <span class="o-thumb" style:left={pct(from)} style:width={pct(view)}></span>

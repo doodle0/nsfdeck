@@ -1,4 +1,4 @@
-use nsfplay_core::{Chip, Player};
+use nsfplay_core::{Chip, Player, SilenceStop};
 
 const ARPEGGIO: &[u8] = include_bytes!("data/arpeggio.nsf");
 const INTRO_LOOP: &[u8] = include_bytes!("data/intro_loop.nsf");
@@ -152,6 +152,27 @@ fn endless_cancels_fade() {
     player.set_endless(true);
     peak(&mut player, RATE as usize); // fade gain is restored at once, let the DC filter settle
     assert!(peak(&mut player, 4800) > 2000);
+}
+
+#[test]
+fn endless_stops_at_silence() {
+    // track 2 is silent: endless playback ignores the core's detector unless asked to stop on it
+    let mut player = Player::load(ARPEGGIO).unwrap();
+    player.start(1, RATE);
+    player.set_endless(true);
+    assert!(play_out(&mut player, RATE, 512, 10) >= 10.0, "stopped without a silence stop");
+
+    player.start(1, RATE); // the silence stop is kept across starts
+    player.set_silence_stop(Some(SilenceStop::Detect));
+    let secs = play_out(&mut player, RATE, 512, 10);
+    assert!((3.0..3.5).contains(&secs), "live detection stopped at {secs} s");
+
+    // a stop time from analysis ends even a track that keeps playing
+    player.start(0, RATE);
+    player.set_silence_stop(Some(SilenceStop::At(1500)));
+    let secs = play_out(&mut player, RATE, 512, 10);
+    assert!((1.5..1.53).contains(&secs), "stopped at {secs} s, not 1.5 s");
+    assert!(player.elapsed_ms() >= 1500);
 }
 
 #[test]

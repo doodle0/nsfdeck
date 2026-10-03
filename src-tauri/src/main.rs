@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use nsfplay_core::analysis::analyze as analyze_track;
 use nsfplay_core::output::{Output, Status as OutputStatus};
-use nsfplay_core::{Detected, Length, Player};
+use nsfplay_core::{Detected, Length, Player, SilenceStop};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 
@@ -265,10 +265,20 @@ fn set_mute_mask(mask: u32, audio: State<Audio>) -> Result<(), String> {
     Ok(())
 }
 
-/// Endless playback (Studio and Developer modes): tracks never fade out or end.
+/// Endless playback (Studio and Developer modes): tracks never fade out or end, except at
+/// their silence stop.
 #[tauri::command]
 fn set_endless(endless: bool, audio: State<Audio>) -> Result<(), String> {
     audio.get()?.set_endless(endless);
+    Ok(())
+}
+
+/// Where the current track stops in endless playback: at `at_ms` (silence found by analysis),
+/// or once the core detects silence (`detect`); neither keeps it playing forever.
+#[tauri::command]
+fn set_silence_stop(at_ms: Option<u32>, detect: bool, audio: State<Audio>) -> Result<(), String> {
+    let stop = at_ms.map(SilenceStop::At).or(detect.then_some(SilenceStop::Detect));
+    audio.get()?.set_silence_stop(stop);
     Ok(())
 }
 
@@ -395,6 +405,7 @@ fn main() {
             set_volume,
             set_mute_mask,
             set_endless,
+            set_silence_stop,
             set_speed,
             dump,
             status,

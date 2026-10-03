@@ -38,7 +38,7 @@ class Player {
   status = $state({ state: 'stopped', track: 0, elapsedMs: 0, lengthMs: 0 });
   /** `performance.now()` when `status` was last updated, for interpolating the position. */
   statusAt = $state(0);
-  /** Counts track starts; the backend forgets per-track settings (the A–B region) on each. */
+  /** Counts track starts; the backend forgets per-track settings (A–B region, silence stop) on each. */
   starts = $state(0);
   /** What each channel plays right now, by channel bit (from the `playback` event). */
   /** @type {Record<number, ChannelNow>} */
@@ -59,6 +59,8 @@ class Player {
   listen = null;
 
   active = $derived(this.status.state !== 'stopped');
+  /** Stopped where the track ended on its own (`status.elapsedMs` says where); a seek resumes there. */
+  ended = $derived(this.status.state === 'stopped' && this.status.elapsedMs > 0);
   endless = $derived(this.mode !== 'listen');
   playing = $derived(this.status.state === 'playing');
   /** Length shown for the current track: live from the engine while playing, else from the file. */
@@ -158,7 +160,7 @@ class Player {
   }
 
   async seek(ms) {
-    if (!this.active) return;
+    if (!this.active && !this.ended) return;
     await this.call('seek', { ms: Math.max(0, Math.round(ms)) });
     await this.poll();
   }
