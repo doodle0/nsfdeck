@@ -8,6 +8,8 @@ import { playlist, trackKey } from './playlist.svelte.js';
 
 /** One NES frame (NTSC), the smallest step when paused. */
 export const FRAME_MS = 1000 / 60.0988;
+/** The closest the timeline zooms in: this much of it fills the view. */
+const MIN_VIEW_MS = 1000;
 
 class Studio {
   path = $derived(player.file?.path ?? null);
@@ -39,10 +41,72 @@ class Studio {
   /** The playhead on the timeline. */
   position = $derived(this.fold(this.elapsed));
 
-  /** Length of the timeline: the intro plus one loop, or (no loop known) growing with playback. */
+  /**
+   * Where the track ends on the timeline, and how that is known: one pass of its loop, the
+   * silence found by analysis, its length in the file, or (`guess`) Listen's default length
+   * while analysis runs or when it found neither a loop nor an end.
+   * @type {{ ms: number, source: 'loop' | 'silence' | 'file' | 'guess' }}
+   */
+  ending = $derived.by(() => {
+    if (this.loop) return { ms: this.loop.endMs, source: 'loop' };
+    if (this.analysis?.kind === 'silence') return { ms: this.analysis.atMs, source: 'silence' };
+    const fileMs = player.file?.tracks[this.track]?.lengthMs;
+    if (fileMs) return { ms: fileMs, source: 'file' };
+    return { ms: playlist.settings.playMs + playlist.settings.fadeMs, source: 'guess' };
+  });
+  end = $derived(this.ending.ms);
+
+  /**
+   * Length of the timeline: the track's end, or (once playback runs past it, which only a track
+   * without a loop can do) the next whole minute after the playhead.
+   */
   span = $derived(
-    this.loop ? this.loop.endMs : Math.max(60_000, Math.ceil((this.elapsed + 1) / 60_000) * 60_000),
+    this.position <= this.end ? this.end : Math.ceil(this.position / 60_000) * 60_000,
   );
+
+  // ---- the visible part of the timeline: zoom and scroll ----
+
+  /** How much of the timeline the view shows when zoomed in; null shows all of it. */
+  zoomMs = $state(/** @type {number | null} */ (null));
+  /** Where the view starts, as last set; `viewFrom` keeps it inside the timeline. */
+  viewStart = $state(0);
+  viewMs = $derived(Math.min(this.zoomMs ?? Infinity, this.span));
+  viewFrom = $derived(Math.max(0, Math.min(this.viewStart, this.span - this.viewMs)));
+  /** Whether the view pages along with the playhead; off while the user looks elsewhere. */
+  follow = true;
+
+  /** Whether timeline time `ms` is in view. */
+  inView(ms) {
+    return ms >= this.viewFrom && ms <= this.viewFrom + this.viewMs;
+  }
+
+  /** Zooms in by `factor` (below 1 zooms out), keeping timeline time `at` in place on screen. */
+  zoom(factor, at = this.position) {
+    const old = this.viewMs;
+    if (!this.inView(at)) at = this.viewFrom + old / 2;
+    const next = Math.max(Math.min(MIN_VIEW_MS, this.span), Math.min(this.span, old / factor));
+    this.viewStart = at - ((at - this.viewFrom) / old) * next;
+    this.zoomMs = next >= this.span ? null : next;
+    this.follow = this.inView(this.position);
+  }
+
+  /** Shows the whole timeline. */
+  fit() {
+    this.zoomMs = null;
+    this.viewStart = 0;
+    this.follow = true;
+  }
+
+  /** Scrolls the view by `delta` ms. */
+  pan(delta) {
+    this.viewStart = this.viewFrom + delta;
+    this.follow = this.inView(this.position);
+  }
+
+  /** Scrolls the view, a page at a time, so that `ms` is in it. */
+  reveal(ms) {
+    if (!this.inView(ms)) this.viewStart = ms - this.viewMs * 0.05;
+  }
 
   /** Song time to timeline time. */
   fold(t) {
@@ -53,7 +117,10 @@ class Studio {
 
   /** Seeks to timeline time `ms` (into the first pass: same music, least emulation). */
   seekTo(ms) {
-    player.seek(Math.max(0, Math.min(ms, this.span - 1)));
+    ms = Math.max(0, Math.min(ms, this.span - 1));
+    this.follow = true;
+    this.reveal(ms);
+    player.seek(ms);
   }
 
   /** Steps the playhead by `delta` ms of timeline time. */
@@ -88,11 +155,20 @@ class Studio {
 
   /**
    * Keeps the backend in step: analyzes the track for its timeline, and sends the A–B region.
+   * Also shows each new track whole, and pages the view along with the playhead.
    * The region is in first-pass time, so if it turns on while a later pass plays, playback
    * first moves to the same spot in the first pass (the same music).
    */
   connect() {
     return $effect.root(() => {
+      $effect(() => {
+        void this.key;
+        untrack(() => this.fit());
+      });
+      $effect(() => {
+        const at = this.position;
+        untrack(() => this.follow && this.reveal(at));
+      });
       $effect(() => {
         if (player.endless && player.active && this.path) playlist.requestAnalysis(this.path, this.track);
       });

@@ -21,8 +21,18 @@
   });
 
   let span = $derived(Math.max(1, studio.span));
-  const x = (ms) => (ms / span) * width;
-  const msAt = (px) => Math.max(0, Math.min(span, (px / width) * span));
+  let from = $derived(studio.viewFrom);
+  let view = $derived(Math.max(1, studio.viewMs));
+  let zoomed = $derived(view < span);
+  const x = (ms) => ((ms - from) / view) * width;
+  const msAt = (px) => Math.max(0, Math.min(span, from + (px / width) * view));
+  /** How far the track is known to run: up to here it's drawn solid, after it hatched. */
+  let knownEnd = $derived(studio.ending.source === 'guess' ? 0 : studio.end);
+  /** An end that isn't the loop's (that one is the band's own end), marked with a line. */
+  let endMark = $derived(studio.ending.source === 'silence' || studio.ending.source === 'file');
+
+  /** Position on the overview, which always shows the whole timeline. */
+  const pct = (ms) => `${(Math.max(0, Math.min(span, ms)) / span) * 100}%`;
 
   /** m:ss.t */
   function fmt(ms) {
@@ -30,11 +40,63 @@
     return `${Math.floor(t / 600)}:${String(Math.floor(t / 10) % 60).padStart(2, '0')}.${t % 10}`;
   }
 
-  /** Ruler ticks at a step that leaves room for their labels. */
+  /** Ruler ticks in view, at a step that leaves room for their labels. */
+  let tickStep = $derived(
+    [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300].map((s) => s * 1000).find((s) => (s / view) * width >= 56) ??
+      600_000,
+  );
   let ticks = $derived.by(() => {
-    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].map((s) => s * 1000).find((s) => x(s) >= 56) ?? 600_000;
-    return Array.from({ length: Math.floor(span / step) + 1 }, (_, i) => i * step);
+    const first = Math.ceil(from / tickStep);
+    const count = Math.floor((from + view) / tickStep) - first + 1;
+    return Array.from({ length: Math.max(0, count) }, (_, i) => (first + i) * tickStep);
   });
+  /** Tick labels show tenths only when ticks are less than a second apart. */
+  const tickLabel = (ms) => (tickStep < 1000 ? fmt(ms) : fmt(ms).replace(/\.\d$/, ''));
+
+  // ---- wheel: scroll the view; Ctrl/⌘-wheel (or a touchpad pinch) zooms around the pointer ----
+
+  $effect(() => {
+    const el = svg;
+    if (!el) return;
+    /** @param {WheelEvent} e */
+    function onWheel(e) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        studio.zoom(Math.exp(-e.deltaY * 0.002), msAt(e.clientX - el.getBoundingClientRect().left));
+        return;
+      }
+      if (!zoomed) return; // nothing to scroll: leave the wheel to the page
+      e.preventDefault();
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      studio.pan((d / width) * view);
+    }
+    // not passive, so it can keep Ctrl-wheel from zooming the page
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  });
+
+  // ---- overview: the whole timeline, with the view as a thumb to drag ----
+
+  /** @type {{ x: number, from: number } | null} */
+  let thumbDrag = null;
+
+  /** @param {PointerEvent & { currentTarget: HTMLDivElement }} e */
+  function onOverviewDown(e) {
+    if (e.button !== 0 || !zoomed) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const at = ((e.clientX - r.left) / r.width) * span;
+    // a click beside the thumb centers the view there, then drags it as usual
+    if (!studio.inView(at)) studio.pan(at - view / 2 - from);
+    thumbDrag = { x: e.clientX, from: studio.viewFrom };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  /** @param {PointerEvent & { currentTarget: HTMLDivElement }} e */
+  function onOverviewMove(e) {
+    if (!thumbDrag) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    studio.pan(thumbDrag.from + ((e.clientX - thumbDrag.x) / r.width) * span - studio.viewFrom);
+  }
 
   // ---- pointer: scrub to seek; Shift-drag (or drag on the region) to mark A–B ----
 
@@ -146,20 +208,37 @@
       onpointerup={onUp}
       onpointerleave={() => (hover = null)}
     >
+      <!-- zoomed in, the timeline extends past both edges -->
+      <clipPath id="timeline-clip"><rect y="-4" {width} height={HEIGHT + 8} /></clipPath>
+      <pattern id="timeline-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+        <rect class="hatch-bg" width="6" height="6" />
+        <line class="hatch-line" x1="0" y1="0" x2="0" y2="6" />
+      </pattern>
+      <g clip-path="url(#timeline-clip)">
       {#each ticks as t (t)}
         <line class="tick" x1={x(t)} x2={x(t)} y1="11" y2={BAND_Y} />
-        <text class="label" x={x(t) + 3} y="10">{fmt(t).replace(/\.\d$/, '')}</text>
+        {#if x(t) + 6 * tickLabel(t).length < width}<text class="label" x={x(t) + 3} y="10">{tickLabel(t)}</text>{/if}
       {/each}
 
       {#if studio.loop}
         {@const l = studio.loop}
-        <rect class="band intro" x="0" y={BAND_Y} width={x(l.startMs)} height={BAND_H} />
+        {@const introX = Math.max(0, x(0))}
+        {@const loopX = Math.max(0, x(l.startMs))}
+        <rect class="band intro" x={x(0)} y={BAND_Y} width={x(l.startMs) - x(0)} height={BAND_H} />
         <rect class="band loop" x={x(l.startMs)} y={BAND_Y} width={x(l.endMs) - x(l.startMs)} height={BAND_H} />
-        {#if x(l.startMs) > 40}<text class="band-label" x="6" y={BAND_Y + 17}>intro</text>{/if}
-        <text class="band-label" x={x(l.startMs) + 6} y={BAND_Y + 17}>loop ⟲</text>
+        {#if x(l.startMs) - introX > 40}<text class="band-label" x={introX + 6} y={BAND_Y + 17}>intro</text>{/if}
+        {#if x(l.endMs) - loopX > 50}<text class="band-label" x={loopX + 6} y={BAND_Y + 17}>loop ⟲</text>{/if}
         <line class="loop-mark" x1={x(l.startMs)} x2={x(l.startMs)} y1={BAND_Y - 4} y2={BAND_Y + BAND_H + 4} />
       {:else}
-        <rect class="band unknown" x="0" y={BAND_Y} {width} height={BAND_H} />
+        <rect class="band intro" x={x(0)} y={BAND_Y} width={x(knownEnd) - x(0)} height={BAND_H} />
+      {/if}
+      {#if span > knownEnd}
+        <!-- the track's length is a guess, or playback has run past its end -->
+        {@const restX = Math.max(0, x(knownEnd))}
+        <rect class="band unknown" x={x(knownEnd)} y={BAND_Y} width={x(span) - x(knownEnd)} height={BAND_H} />
+        {#if x(span) - restX > 110}
+          <text class="band-label" x={restX + 6} y={BAND_Y + 17}>{knownEnd ? 'past the end' : 'length unknown'}</text>
+        {/if}
       {/if}
 
       {#if shownRegion}
@@ -172,11 +251,57 @@
       {#if hover !== null && !drag}
         <line class="hover" x1={x(hover)} x2={x(hover)} y1={BAND_Y} y2={BAND_Y + BAND_H} />
       {/if}
+      </g>
+      <!-- outside the clip, so these show whole at either edge -->
+      {#if endMark && x(studio.end) >= 0 && x(studio.end) <= width}
+        <line class="end-mark" x1={x(studio.end)} x2={x(studio.end)} y1={BAND_Y - 4} y2={BAND_Y + BAND_H + 4} />
+      {/if}
       {#if player.active}
         {@const px = x(drag?.kind === 'seek' ? drag.at : studio.position)}
-        <line class="playhead" x1={px} x2={px} y1={BAND_Y - 6} y2={BAND_Y + BAND_H + 6} />
+        {#if px >= 0 && px <= width}
+          <line class="playhead" x1={px} x2={px} y1={BAND_Y - 6} y2={BAND_Y + BAND_H + 6} />
+        {/if}
       {/if}
     </svg>
+    <div class="overview-row">
+      <div
+        class="overview"
+        class:zoomed
+        role="scrollbar"
+        tabindex="-1"
+        aria-label="Visible part of the timeline"
+        aria-orientation="horizontal"
+        aria-controls="timeline-clip"
+        aria-valuemin="0"
+        aria-valuemax={Math.round(span - view)}
+        aria-valuenow={Math.round(from)}
+        onpointerdown={onOverviewDown}
+        onpointermove={onOverviewMove}
+        onpointerup={() => (thumbDrag = null)}
+      >
+        {#if studio.loop}
+          <span class="o-band intro" style:left="0" style:width={pct(studio.loop.startMs)}></span>
+          <span class="o-band loop" style:left={pct(studio.loop.startMs)} style:right="0"></span>
+        {:else}
+          <span class="o-band intro" style:left="0" style:width={pct(knownEnd)}></span>
+        {/if}
+        {#if span > knownEnd}
+          <span class="o-band unknown" style:left={pct(knownEnd)} style:right="0"></span>
+        {/if}
+        {#if shownRegion}
+          <span class="o-region" style:left={pct(shownRegion.a)} style:width={pct(shownRegion.b - shownRegion.a)}></span>
+        {/if}
+        {#if player.active}
+          <span class="o-playhead" style:left={pct(studio.position)}></span>
+        {/if}
+        <span class="o-thumb" style:left={pct(from)} style:width={pct(view)}></span>
+      </div>
+      <span class="zoom">
+        <button class="link" title="Zoom out (− or Ctrl+wheel)" disabled={!zoomed} onclick={() => studio.zoom(1 / 2)}>−</button>
+        <button class="link" title="Zoom in (+ or Ctrl+wheel)" disabled={view <= 1000} onclick={() => studio.zoom(2)}>+</button>
+        <button class="link" title="Show the whole timeline (0)" disabled={!zoomed} onclick={() => studio.fit()}>Fit</button>
+      </span>
+    </div>
   </div>
 </section>
 
@@ -258,6 +383,83 @@
     overflow: visible;
   }
 
+  .overview-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 2px;
+  }
+
+  .overview {
+    position: relative;
+    flex: 1;
+    height: 8px;
+    border-radius: 3px;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  .overview.zoomed {
+    cursor: grab;
+  }
+
+  .overview > span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+
+  .o-band.intro {
+    background: var(--panel-2);
+  }
+
+  .o-band.unknown {
+    background: repeating-linear-gradient(45deg, var(--panel-2) 0 3px, var(--line) 3px 5px);
+  }
+
+  .o-band.loop {
+    background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  }
+
+  .o-region {
+    background: color-mix(in srgb, var(--note) 45%, transparent);
+  }
+
+  .o-playhead {
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text);
+  }
+
+  .o-thumb {
+    box-sizing: border-box;
+    border: 1.5px solid var(--dim);
+    border-radius: 3px;
+  }
+
+  .overview:not(.zoomed) .o-thumb {
+    border-color: transparent;
+  }
+
+  .zoom {
+    display: flex;
+    gap: 10px;
+    flex: none;
+  }
+
+  .zoom .link {
+    min-width: 12px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .zoom .link:disabled {
+    color: var(--dim);
+    cursor: default;
+    text-decoration: none;
+  }
+
   .tick {
     stroke: var(--line);
   }
@@ -277,8 +479,21 @@
   }
 
   .band.unknown {
+    fill: url(#timeline-hatch);
+  }
+
+  .hatch-bg {
     fill: var(--panel-2);
-    opacity: 0.6;
+  }
+
+  .hatch-line {
+    stroke: var(--line);
+    stroke-width: 2;
+  }
+
+  .end-mark {
+    stroke: var(--dim);
+    stroke-width: 2;
   }
 
   .band-label {

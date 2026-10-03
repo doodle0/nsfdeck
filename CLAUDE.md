@@ -53,6 +53,7 @@ Done (step 3): background analysis (`analysis::analyze`, loop/silence via the co
 - Bump `ANALYSIS_VERSION` in `playlist.svelte.js` when analysis results change, so saved results are recomputed.
 - Analysis renders in 1 ms slices: holding `RENDER_LOCK` for longer slices (100 ms of song) caused audio underruns with real files. A plain `std::sync::Mutex` measured fine; a fair mutex did not help.
 - M3U track numbers: decimal is read as 1-based and `$hex` as 0-based (assumed to match Game_Music_Emu; unverified).
+- Studio timeline zoom/scroll: view state (`zoomMs`, `viewStart`, `follow`) lives in `studio`; the view pages along with the playhead unless the user scrolled it away (a seek turns following back on). The timeline spans `studio.end`: intro + one loop, the silence end, the file's length, or (a guess, drawn hatched) Listen's default 5:05. Only a track without a loop can play past its end; the span then grows to the next whole minute after the playhead.
 - Headless screenshots: Chrome fires `resize` when capturing, which closes `Menu.svelte`; suppress `resize`/`blur` in the mock page to capture menus.
 
 Not done yet:

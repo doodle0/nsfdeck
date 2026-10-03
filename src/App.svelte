@@ -65,6 +65,11 @@
       ArrowLeft: () => (studioMode ? studio.step(-nudge) : player.seek(player.status.elapsedMs - 5000)),
       ArrowRight: () => (studioMode ? studio.step(nudge) : player.seek(player.status.elapsedMs + 5000)),
     };
+    if (studioMode && !e.ctrlKey && !e.metaKey) {
+      actions['+'] = actions['='] = () => studio.zoom(2);
+      actions['-'] = () => studio.zoom(1 / 2);
+      actions['0'] = () => studio.fit();
+    }
     if (actions[e.key]) {
       e.preventDefault();
       actions[e.key]();
