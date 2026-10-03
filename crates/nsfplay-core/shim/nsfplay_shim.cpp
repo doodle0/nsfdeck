@@ -92,8 +92,20 @@ struct CpuPeek : xgm::NES_CPU
 struct MemPeek : xgm::NES_MEM { static constexpr auto p_image() { return &MemPeek::image; } };
 struct BusPeek : xgm::Bus { static constexpr auto p_vd() { return &BusPeek::vd; } };
 struct BankPeek : xgm::NES_BANK { static constexpr auto p_bankswitch() { return &BankPeek::bankswitch; } };
-struct ApuPeek : xgm::NES_APU { static constexpr auto p_reg() { return &ApuPeek::reg; } };
-struct DmcPeek : xgm::NES_DMC { static constexpr auto p_reg() { return &DmcPeek::reg; } };
+struct ApuPeek : xgm::NES_APU
+{
+    static constexpr auto p_reg() { return &ApuPeek::reg; }
+    static constexpr auto p_volume() { return &ApuPeek::volume; }
+    static constexpr auto p_envelope_disable() { return &ApuPeek::envelope_disable; }
+    static constexpr auto p_envelope_counter() { return &ApuPeek::envelope_counter; }
+};
+struct DmcPeek : xgm::NES_DMC
+{
+    static constexpr auto p_reg() { return &DmcPeek::reg; }
+    static constexpr auto p_noise_volume() { return &DmcPeek::noise_volume; }
+    static constexpr auto p_envelope_disable() { return &DmcPeek::envelope_disable; }
+    static constexpr auto p_envelope_counter() { return &DmcPeek::envelope_counter; }
+};
 struct Mmc5Peek : xgm::NES_MMC5 { static constexpr auto p_reg() { return &Mmc5Peek::reg; } };
 struct N163Peek : xgm::NES_N106 { static constexpr auto p_reg() { return &N163Peek::reg; } };
 struct Fme7Peek : xgm::NES_FME7 { static constexpr auto p_psg() { return &Fme7Peek::psg; } };
@@ -343,6 +355,35 @@ int nsfp_channel_info(nsfp *p, int bit, nsfp_channel *out)
     out->max_volume = t->GetMaxVolume();
     out->key = t->GetKeyStatus();
     out->tone = t->GetTone();
+
+    // The 2A03's info reports register values, not loudness: pulse and noise volume is the
+    // constant volume or the envelope period, plus flag bits (0x10 envelope, 0x20 loop), and
+    // the triangle (which has no volume control) always reports 0, and DPCM reports its DAC
+    // level. Report what is heard.
+    const xgm::NSFPlayer &pl = p->player;
+    if ((bit == 0 || bit == 1) && pl.apu)
+    {
+        const xgm::NES_APU &a = *pl.apu;
+        out->volume = (a.*ApuPeek::p_envelope_disable())[bit] ? (a.*ApuPeek::p_volume())[bit]
+                                                               : (a.*ApuPeek::p_envelope_counter())[bit];
+        if (!out->key) out->volume = 0;
+    }
+    else if (bit == 2)
+    {
+        out->max_volume = 15;
+        out->volume = out->key ? 15 : 0;
+    }
+    else if (bit == 3 && pl.dmc)
+    {
+        const xgm::NES_DMC &d = *pl.dmc;
+        out->volume = d.*DmcPeek::p_envelope_disable() ? d.*DmcPeek::p_noise_volume() : d.*DmcPeek::p_envelope_counter();
+        if (!out->key) out->volume = 0;
+    }
+    else if (bit == 4)
+    {
+        // the DAC level is the sample's current position, not its loudness
+        out->volume = out->key ? out->max_volume : 0;
+    }
     return 1;
 }
 

@@ -111,6 +111,7 @@ pub const CHANNELS: &[Channel] = &{
 pub struct ChannelState {
     /// Pitch in Hz (meaningless for noise and DPCM).
     pub freq_hz: f64,
+    /// Loudness from 0 to `max_volume` (for the 2A03, what is heard rather than the register).
     pub volume: i32,
     pub max_volume: i32,
     /// Non-zero while a note is keyed on.

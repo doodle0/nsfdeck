@@ -11,6 +11,12 @@
   --note: #f2d22e;
   --danger: #ff6b6b;
   --muted-bg: #1f2023;
+  /* pulse duty 12.5 / 25 / 50 / 75 %, and the noise's metallic (short) mode */
+  --duty-0: #c38bff;
+  --duty-1: #39c4e6;
+  --duty-2: var(--accent);
+  --duty-3: #ff9f43;
+  --metal: #ff6fb5;
   color-scheme: dark;
 }
 
@@ -27,6 +33,10 @@
     --note: #b8930b;
     --danger: #c83737;
     --muted-bg: #e6e6e2;
+    --duty-0: #8a4fd6;
+    --duty-1: #1689ad;
+    --duty-3: #d06a10;
+    --metal: #c93a84;
     color-scheme: light;
   }
 }

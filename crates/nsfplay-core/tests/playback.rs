@@ -269,7 +269,7 @@ fn channel_state_follows_the_music() {
     player.start(0, RATE);
     peak(&mut player, RATE as usize / 2);
     let sq1 = player.channel(0).expect("square 1 info");
-    assert!(sq1.key != 0 && sq1.volume > 0, "{sq1:?}");
+    assert!(sq1.key != 0 && sq1.volume > 0 && sq1.volume <= sq1.max_volume, "{sq1:?}");
     assert!(sq1.freq_hz > 50.0 && sq1.freq_hz < 5000.0, "{sq1:?}");
     let tri = player.channel(2).expect("triangle info");
     assert_eq!(tri.volume, 0, "the tune only uses square 1: {tri:?}");
