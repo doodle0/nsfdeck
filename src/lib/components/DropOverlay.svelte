@@ -1,5 +1,6 @@
 <script>
   import { player } from '../player.svelte.js';
+  import Cart from './Cart.svelte';
 
   /** @type {{ highlight: boolean }} */
   let { highlight } = $props();
@@ -7,7 +8,7 @@
 
 <div class="overlay">
   <div class="box" class:highlight>
-    <img src="/cart.png" alt="" width="64" height="64" />
+    <div class="cart"><Cart size={64} meter={false} /></div>
     <p class="title">Drop NSF or NSFe files or folders</p>
     <p class="dim">or <button class="link" onclick={() => player.browse()}>browse for files</button></p>
   </div>
@@ -36,8 +37,7 @@
     border-color: var(--accent);
   }
 
-  img {
-    image-rendering: pixelated;
+  .cart {
     margin-bottom: 8px;
   }
 

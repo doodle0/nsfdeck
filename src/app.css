@@ -17,6 +17,13 @@
   --duty-2: var(--accent);
   --duty-3: #ff9f43;
   --metal: #ff6fb5;
+  /* the cartridge drawn in the app (Cart.svelte) */
+  --cart-shell-top: #34363c;
+  --cart-shell-bottom: #2a2c31;
+  --cart-line: #3a3d43;
+  --cart-window: #1c1d20;
+  --cart-off: #2e3035;
+  --cart-pin: #55585f;
   color-scheme: dark;
 }
 
@@ -37,6 +44,12 @@
     --duty-1: #1689ad;
     --duty-3: #d06a10;
     --metal: #c93a84;
+    --cart-shell-top: #ffffff;
+    --cart-shell-bottom: #ecece8;
+    --cart-line: #c9c9c3;
+    --cart-window: #f7f7f4;
+    --cart-off: #dcdcd7;
+    --cart-pin: #a9aaa5;
     color-scheme: light;
   }
 }

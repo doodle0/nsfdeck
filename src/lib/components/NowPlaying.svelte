@@ -1,5 +1,6 @@
 <script>
   import { player } from '../player.svelte.js';
+  import Cart from './Cart.svelte';
   import ModeSwitch from './ModeSwitch.svelte';
 
   let file = $derived(player.file);
@@ -10,7 +11,7 @@
 </script>
 
 <header>
-  <img class="cart" src="/cart.png" alt="" width="48" height="48" />
+  <Cart size={48} />
   <div class="meta">
     <h1>{title}</h1>
     <p>{file?.artist ?? ''}</p>
@@ -33,11 +34,6 @@
     align-items: center;
     gap: 14px;
     min-width: 0;
-  }
-
-  .cart {
-    image-rendering: pixelated;
-    flex: none;
   }
 
   .meta {
