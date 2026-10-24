@@ -1,0 +1,176 @@
+# Loop detection results on 2026-10-24 (cargo run --release -p nsfplay-core --example analyze -- FILE); tracks are 1-based.
+# Files are in ~/Downloads, not in the repo. Timings stripped. See loop-detection.md.
+
+## Mega Man 5.nsf
+#1   loop  start  12152 ms  end  81574 ms  length  69422 ms
+#2   loop  start   5647 ms  end  43048 ms  length  37401 ms
+#3   loop  start  15533 ms  end  65941 ms  length  50408 ms
+#4   loop  start    202 ms  end  48201 ms  length  47999 ms
+#5   loop  start      9 ms  end  46482 ms  length  46473 ms
+#6   loop  start  12400 ms  end  51674 ms  length  39274 ms
+#7   loop  start  10671 ms  end  72052 ms  length  61381 ms
+#8   loop  start   6179 ms  end  51202 ms  length  45023 ms
+#9   loop  start     14 ms  end  56020 ms  length  56006 ms
+#10  loop  start      9 ms  end  70081 ms  length  70072 ms
+#11  loop  start  10175 ms  end  40099 ms  length  29924 ms
+#12  silence at 36249 ms
+#13  loop  start      9 ms  end  76497 ms  length  76488 ms
+#14  loop  start     70 ms  end   8603 ms  length   8533 ms
+#15  silence at 6901 ms
+#16  loop  start   7385 ms  end   7917 ms  length    532 ms
+#17  silence at 8217 ms
+#18  silence at 4334 ms
+#19  silence at 3351 ms
+#20  loop  start    929 ms  end  10801 ms  length   9872 ms
+#21  loop  start      8 ms  end   2683 ms  length   2675 ms
+#22  silence at 7234 ms
+#23  loop  start   6610 ms  end  68266 ms  length  61656 ms
+#24  silence at 1684 ms
+#25  silence at 1084 ms
+#26  silence at 1372 ms
+#27  silence at 1184 ms
+#28  silence at 1118 ms
+#29  silence at 1268 ms
+#30  silence at 2500 ms
+#31  silence at 1084 ms
+#32  silence at 1201 ms
+#33  silence at 1234 ms
+#34  silence at 1384 ms
+#35  loop  start   1085 ms  end   1618 ms  length    533 ms
+#36  silence at 1351 ms
+#37  silence at 2067 ms
+#38  silence at 1451 ms
+#39  silence at 1251 ms
+#40  silence at 1250 ms
+#41  silence at 1584 ms
+#42  silence at 1334 ms
+#43  silence at 1384 ms
+#44  silence at 1518 ms
+#45  silence at 2301 ms
+#46  silence at 1151 ms
+#47  silence at 1538 ms
+#48  silence at 4300 ms
+#49  silence at 4301 ms
+#50  loop  start   1685 ms  end   2235 ms  length    550 ms
+#51  silence at 2984 ms
+#52  silence at 1268 ms
+#53  silence at 1268 ms
+#54  silence at 1835 ms
+#55  silence at 1250 ms
+#56  silence at 1702 ms
+#57  silence at 1161 ms
+#58  silence at 1805 ms
+#59  silence at 1467 ms
+#60  silence at 1551 ms
+#61  silence at 1117 ms
+#62  silence at 1205 ms
+#63  silence at 1534 ms
+#64  silence at 1518 ms
+#65  silence at 1384 ms
+#66  silence at 1600 ms
+#67  silence at 1705 ms
+#68  silence at 1818 ms
+#69  silence at 1817 ms
+#70  silence at 1550 ms
+#71  silence at 1484 ms
+#72  silence at 1301 ms
+#73  silence at 1517 ms
+#74  loop  start      9 ms  end  24033 ms  length  24024 ms
+#75  loop  start     11 ms  end   5219 ms  length   5208 ms
+#76  silence at 1618 ms
+
+## Kirby's Adventure [Hoshi no Kirby - Yume no Izumi no Monogatari] (1993-03-23)(HAL Laboratory)(Nintendo).nsf
+#1   loop  start  10665 ms  end  53331 ms  length  42666 ms
+#2   loop  start      1 ms  end  42665 ms  length  42664 ms
+#3   loop  start   2671 ms  end   8005 ms  length   5334 ms
+#4   loop  start  21501 ms  end  46834 ms  length  25333 ms
+#5   loop  start  15168 ms  end  40501 ms  length  25333 ms
+#6   loop  start    451 ms  end   1651 ms  length   1200 ms
+#7   loop  start      0 ms  end   9600 ms  length   9600 ms
+#8   silence at 6384 ms
+#9   silence at 3585 ms
+#10  loop  start      1 ms  end  25599 ms  length  25598 ms
+#11  loop  start      0 ms  end  10667 ms  length  10667 ms
+#12  silence at 3569 ms
+#13  loop  start   3599 ms  end  29197 ms  length  25598 ms
+#14  silence at 15802 ms
+#15  loop  start   7099 ms  end  35891 ms  length  28792 ms
+#16  loop  start  25606 ms  end  76804 ms  length  51198 ms
+#17  loop  start      0 ms  end  12800 ms  length  12800 ms
+#18  loop  start   4665 ms  end  45731 ms  length  41066 ms
+#19  loop  start      2 ms  end  41068 ms  length  41066 ms
+#20  loop  start   4935 ms  end  19867 ms  length  14932 ms
+#21  loop  start    885 ms  end  15818 ms  length  14933 ms
+#22  loop  start    152 ms  end  19351 ms  length  19199 ms
+#23  silence at 2068 ms
+#24  silence at 1002 ms
+#25  silence at 1852 ms
+#26  silence at 1168 ms
+#27  silence at 2699 ms
+#28  loop  start   9900 ms  end  45098 ms  length  35198 ms
+#29  loop  start      0 ms  end  35199 ms  length  35199 ms
+#30  silence at 2543 ms
+#31  loop  start  10699 ms  end  54691 ms  length  43992 ms
+#32  loop  start      9 ms  end  44001 ms  length  43992 ms
+#33  loop  start   9899 ms  end  45098 ms  length  35199 ms
+#34  loop  start      0 ms  end  35199 ms  length  35199 ms
+#35  loop  start   4568 ms  end  23767 ms  length  19199 ms
+#36  loop  start   6670 ms  end  17336 ms  length  10666 ms
+#37  loop  start      0 ms  end   7467 ms  length   7467 ms
+#38  silence at 1151 ms
+#39  silence at 1002 ms
+#40  silence at 3238 ms
+#41  loop  start   7999 ms  end  59191 ms  length  51192 ms
+#42  loop  start      6 ms  end  51198 ms  length  51192 ms
+#43  loop  start   8535 ms  end  42666 ms  length  34131 ms
+#44  loop  start      1 ms  end  34132 ms  length  34131 ms
+#45  loop  start     35 ms  end   4302 ms  length   4267 ms
+#46  loop  start    803 ms  end   7203 ms  length   6400 ms
+#47  silence at 4001 ms
+#48  silence at 3798 ms
+#49  silence at 2393 ms
+#50  silence at 7402 ms
+#51  loop  start   9599 ms  end  47998 ms  length  38399 ms
+#52  loop  start      0 ms  end  38399 ms  length  38399 ms
+#53  silence at 10551 ms
+#54  loop  start   1870 ms  end  31736 ms  length  29866 ms
+#55  loop  start    251 ms  end  11984 ms  length  11733 ms
+#56  loop  start  64049 ms  end  74715 ms  length  10666 ms
+#57  loop  start  23468 ms  end  25601 ms  length   2133 ms
+#58  loop  start   6969 ms  end  17635 ms  length  10666 ms
+
+## Kid Icarus [Hikari Shinwa - Palutena no Kagami] (FDS)(1986-12-19)(Nintendo R&D1, Tose)(Nintendo).nsf
+#1   silence at 76585 ms
+#2   loop  start   3203 ms  end  44818 ms  length  41615 ms
+#3   loop  start    403 ms  end   3619 ms  length   3216 ms
+#4   silence at 4186 ms
+#5   loop  start   6419 ms  end  70433 ms  length  64014 ms
+#6   loop  start     53 ms  end  12869 ms  length  12816 ms
+#7   silence at 3388 ms
+#8   loop  start   4452 ms  end  49800 ms  length  45348 ms
+#9   loop  start   4269 ms  end  27752 ms  length  23483 ms
+#10  loop  start   6403 ms  end  51218 ms  length  44815 ms
+#11  loop  start    269 ms  end  13085 ms  length  12816 ms
+#12  silence at 67985 ms
+#13  silence at 1267 ms
+#14  silence at 1068 ms
+#15  silence at 1017 ms
+#16  silence at 1368 ms
+#17  silence at 1101 ms
+#18  silence at 1402 ms
+#19  silence at 1118 ms
+#20  silence at 1085 ms
+#21  silence at 1284 ms
+#22  silence at 1802 ms
+#23  silence at 1502 ms
+#24  silence at 1250 ms
+#25  silence at 1251 ms
+#26  silence at 1269 ms
+#27  silence at 1102 ms
+#28  silence at 1085 ms
+#29  silence at 2603 ms
+#30  silence at 1402 ms
+#31  silence at 1282 ms
+#32  silence at 1529 ms
+#33  silence at 1235 ms
+#34  silence at 1669 ms
