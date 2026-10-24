@@ -95,7 +95,7 @@ loads anything from the network, so system proxy settings don't apply to it.
 |---|---|
 | `vendor/nsfplay/` | Upstream NSFPlay (submodule). Only its `xgm/` and `vcm/` emulation core is compiled. |
 | `crates/nsfplay-core/` | Rust crate that compiles the core, wraps it through a small C shim (`shim/`), and plays audio with [cpal](https://github.com/RustAudio/cpal) behind the `output` feature. It does not depend on Tauri. |
-| `src-tauri/` | The Tauri app: window setup and the commands the UI calls. |
+| `src-tauri/` | The Tauri app: window setup and the commands the UI calls. `icons/icon.svg` is the master for the app icons. |
 | `src/` | The Svelte 5 frontend. `lib/player.svelte.js` holds playback state; `lib/components/` holds the UI. |
 
 The core crate can be tested and run on its own:

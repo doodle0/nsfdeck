@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- App icon master. Regenerate the PNG/ICO/ICNS files by rendering it to a 1024px PNG and running `pnpm tauri icon <png>`, keeping only the files already in this folder. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2c31"/>
+      <stop offset="1" stop-color="#1c1d20"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="#3a3d43"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="222" fill="url(#bg)"/>
+  <circle cx="264" cy="264" r="54" fill="#2fbf4f"/>
+  <circle cx="388" cy="264" r="54" fill="#2e3035"/>
+  <circle cx="512" cy="264" r="54" fill="#2e3035"/>
+  <circle cx="636" cy="264" r="54" fill="#2e3035"/>
+  <circle cx="760" cy="264" r="54" fill="#2e3035"/>
+  <circle cx="264" cy="388" r="54" fill="#2fbf4f"/>
+  <circle cx="388" cy="388" r="54" fill="#2fbf4f"/>
+  <circle cx="512" cy="388" r="54" fill="#2fbf4f"/>
+  <circle cx="636" cy="388" r="54" fill="#2e3035"/>
+  <circle cx="760" cy="388" r="54" fill="#2e3035"/>
+  <circle cx="264" cy="512" r="54" fill="#2fbf4f"/>
+  <circle cx="388" cy="512" r="54" fill="#2fbf4f"/>
+  <circle cx="512" cy="512" r="54" fill="#2fbf4f"/>
+  <circle cx="636" cy="512" r="54" fill="#2fbf4f"/>
+  <circle cx="760" cy="512" r="54" fill="#f2d22e"/>
+  <circle cx="264" cy="636" r="54" fill="#2fbf4f"/>
+  <circle cx="388" cy="636" r="54" fill="#2fbf4f"/>
+  <circle cx="512" cy="636" r="54" fill="#2fbf4f"/>
+  <circle cx="636" cy="636" r="54" fill="#2e3035"/>
+  <circle cx="760" cy="636" r="54" fill="#2e3035"/>
+  <circle cx="264" cy="760" r="54" fill="#2fbf4f"/>
+  <circle cx="388" cy="760" r="54" fill="#2e3035"/>
+  <circle cx="512" cy="760" r="54" fill="#2e3035"/>
+  <circle cx="636" cy="760" r="54" fill="#2e3035"/>
+  <circle cx="760" cy="760" r="54" fill="#2e3035"/>
+</svg>
