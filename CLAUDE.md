@@ -36,7 +36,7 @@ NSFPlay's `xgm` core (git submodule at `vendor/nsfplay`, compiled by
 ## Testing notes
 
 - There are no real NSF files in the repo. `arpeggio.nsf` is hand-assembled 6502 code: track 1 is a square-wave arpeggio, track 2 is silent (tests auto-stop); its generator script isn't saved. `intro_loop.nsf` and `song_data_loop.nsf` have a generator (`uv run crates/nsfplay-core/tests/data/make_intro_loop.py`).
-- UI without a backend: copy `dist/` or the source files and mock `@tauri-apps/api`, then screenshot with headless `google-chrome`. Desktop screenshots via PIL `ImageGrab.grab(xdisplay=":0")` capture the user's **whole screen**, so ask first.
+- UI without a backend: copy `dist/` or the source files and mock `@tauri-apps/api`, then screenshot with headless `google-chrome`. For a scratch Vite build of real components: symlink the project's `node_modules` into the scratch dir, alias `/^@tauri-apps\/.*/` to a mock module, and keep the Vite config file inside the project while building (a config outside it can't resolve `vite`). Headless Chrome renders the light theme by default; pass `--blink-settings=preferredColorScheme=0` for dark. Desktop screenshots via PIL `ImageGrab.grab(xdisplay=":0")` capture the user's **whole screen**, so ask first.
 
 ## Status (handover, 2026-10-03)
 
@@ -56,6 +56,9 @@ Done (step 3): background analysis (`analysis::analyze`, loop/silence via the co
 - Modes: Listen alone has the playlist, fades and length settings (`DurationSettings`); Studio and Developer share endless playback (`player.endless`), speed and the timeline (`studio.svelte.js`, used by both; only the lower panel differs: mixer vs. emulator dump). Listen's settings never affect the endless modes.
 - Endless playback stops a track without a loop where it goes silent: `set_silence_stop` sends `At(atMs)` for analysis silence, or `Detect` when analysis found nothing in its 10 min. Loop tracks get no stop. `Output` keeps the stop for seeks and clears it on `play`; the frontend re-sends it on each start. After a track ends on its own, `Output` reports `Stopped` with `elapsed_ms` at the end (0 after `stop`), and a seek resumes playback; the timeline keeps the playhead there.
 - Studio timeline zoom/scroll: view state (`zoomMs`, `viewStart`, `follow`) lives in `studio`; the view pages along with the playhead unless the user scrolled it away (a seek turns following back on). The timeline spans `studio.end`: intro + one loop, the silence end, the file's length, or (a guess, drawn hatched) a fixed 5:00. `studio.ending.hard` says whether playback can pass the end: loop ends (the playhead folds) and silence ends where playback stops are hard; file and guessed lengths aren't. The span grows past a soft end only, to the next whole minute after the reported song time plus the playhead's maximum run-ahead (500 ms × speed), never from the interpolated playhead, which would rescale the timeline on a transient overshoot. The interpolated playhead is capped at a hard silence end.
+- App icon: `src-tauri/icons/icon.svg` is the master (dark tile, 5×5 dot grid forming a green play arrow with a yellow tip). To regenerate, render it to a 1024 px PNG (headless Chrome with `--default-background-color=00000000`), run `pnpm tauri icon <png> -o <scratch dir>`, and copy back only the files already in `icons/`. `generate_context!()` embeds the icons, but tauri-build doesn't watch them, so `src-tauri/build.rs` adds `rerun-if-changed=icons`; without it an icon change never reaches the binary.
+- In-app cartridge: `src/lib/components/Cart.svelte` (SVG, design "B · Slab"). Its label shows the icon's arrow while stopped and a meter of the 2A03 channels (bits 0-4, five steps, top step yellow) while playing or paused. A purple stripe marks files with expansion chips. Colours are the `--cart-*` tokens in `app.css`. It replaced `public/cart.png`.
+- Default window is 1024×768 (was 820×600, too narrow for the Studio keyboard).
 - Headless screenshots: Chrome fires `resize` when capturing, which closes `Menu.svelte`; suppress `resize`/`blur` in the mock page to capture menus.
 
 Not done yet:
@@ -63,7 +66,8 @@ Not done yet:
 - License is MIT (`LICENSE`, © 2026 doodle0). Git identity is set per repo: doodle0 <49020517+doodle0@users.noreply.github.com>, matching gh account `doodle0`. `identifier` in `src-tauri/tauri.conf.json` is the placeholder `dev.nsfdeck.app`.
 - Not yet tested with a real game soundtrack, or on macOS/Windows. No CI.
 - Upstream fix for the rconv static buffer is not yet submitted as a PR. Its branch (`fix-rconv-static-buffer` in `~/projects/nsfplay`) is gone (as of 2026-10-03), so it must be recreated.
-- `~/emsdk` is left over from an abandoned WebAssembly approach; the user may want it deleted.
+- `~/emsdk` was installed on 2026-10-02 for a plan to compile the core to WebAssembly for Electron; minutes later the user switched to Tauri, so no WebAssembly build was ever attempted (nothing failed). The user may want it deleted.
+- A web build (e.g. GitHub Pages) would need the core in WebAssembly, for the web target only: the OS builds stay native. The hard parts are `Output`'s threads (no cross-origin isolation headers on GitHub Pages), Web Audio instead of cpal, and putting the frontend's Tauri calls behind a backend interface.
 
 P1 of docs/ux-plan.md is complete (2026-10-03): Listen playlist, Studio timeline/A–B/mixer/keyboard/speed, Developer dump.
 
