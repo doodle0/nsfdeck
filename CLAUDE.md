@@ -66,8 +66,7 @@ Not done yet:
 - License is MIT (`LICENSE`, © 2026 doodle0). Git identity is set per repo: doodle0 <49020517+doodle0@users.noreply.github.com>, matching gh account `doodle0`. `identifier` in `src-tauri/tauri.conf.json` is the placeholder `dev.nsfdeck.app`.
 - Not yet tested with a real game soundtrack, or on macOS/Windows. No CI.
 - Upstream fix for the rconv static buffer is not yet submitted as a PR. Its branch (`fix-rconv-static-buffer` in `~/projects/nsfplay`) is gone (as of 2026-10-03), so it must be recreated.
-- `~/emsdk` was installed on 2026-10-02 for a plan to compile the core to WebAssembly for Electron; minutes later the user switched to Tauri, so no WebAssembly build was ever attempted (nothing failed). The user may want it deleted.
-- A web build (e.g. GitHub Pages) would need the core in WebAssembly, for the web target only: the OS builds stay native. The hard parts are `Output`'s threads (no cross-origin isolation headers on GitHub Pages), Web Audio instead of cpal, and putting the frontend's Tauri calls behind a backend interface.
+- A web build (GitHub Pages) is planned but not started: see **docs/web-build-plan.md**. WebAssembly is for the web target only; the OS builds stay native. (The 2026-10-02 WebAssembly idea was dropped for Tauri before anything was tried, and `~/emsdk` has since been deleted.)
 
 P1 of docs/ux-plan.md is complete (2026-10-03): Listen playlist, Studio timeline/A–B/mixer/keyboard/speed, Developer dump.
 
